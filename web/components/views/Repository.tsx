@@ -84,13 +84,38 @@ export function Repository({ repo, me, go }: { repo: string; me: Me | null; go: 
   }, [waiting, reload]);
 
   const tabs = useRef<HTMLDivElement>(null);
-  const choose = (next: Tab) => {
+  /**
+   * `land` is the CONTROL the reader was sent to, when they were sent by something more
+   * specific than a tab.
+   *
+   * The checklist's call to action said "Store 3 values your project needs" and did
+   * nothing at all when pressed, which is the worst thing a button can do. It called
+   * `choose('environment')` — and the reader was already ON Environment, because the
+   * checklist had put them there. So the tab did not change, the only effect was focusing
+   * a tab button that was already focused, and the form it was promising sat about nine
+   * hundred pixels further down, under three blocks of explanation.
+   *
+   * A step names a control, not a view. Landing on the control works whether or not the
+   * tab had to change, which is the case that was broken.
+   */
+  const choose = (next: Tab, land?: string) => {
     asked.current = true;
     setTab(next);
-    // A tab changed from somewhere OTHER than the tablist — the "Write its recipe" link in
-    // Start's blocker — unmounts the thing that was just activated, and focus falls to
-    // `<body>`. Moving it to the now-selected tab is where a reader would expect to be.
-    requestAnimationFrame(() => tabs.current?.querySelector<HTMLElement>('[aria-selected=true]')?.focus());
+    requestAnimationFrame(() => {
+      const target = land ? tabs.current?.querySelector<HTMLElement>(land) : null;
+      if (target) {
+        // `block:'center'` rather than the default `'start'`, so the field arrives with its
+        // label and its hint visible rather than jammed under the sticky header.
+        target.scrollIntoView({ block: 'center' });
+        // The scroll already happened, and `focus()` would do a second, coarser one.
+        target.focus({ preventScroll: true });
+        return;
+      }
+      // A tab changed from somewhere OTHER than the tablist — the "Write its recipe" link in
+      // Start's blocker — unmounts the thing that was just activated, and focus falls to
+      // `<body>`. Moving it to the now-selected tab is where a reader would expect to be.
+      tabs.current?.querySelector<HTMLElement>('[aria-selected=true]')?.focus();
+    });
     // `replaceState`, not `pushState`: a tab is a view of the same page, and pushing one
     // entry per tab makes Back walk the tabs instead of leaving the repository.
     window.history.replaceState(null, '', `${window.location.pathname}#${next}`);
@@ -160,7 +185,12 @@ export function Repository({ repo, me, go }: { repo: string; me: Me | null; go: 
         detail={data}
         me={me}
         now={tick}
-        onGo={(id) => choose(id === 'secrets' || id === 'draft' || id === 'approve' ? 'environment' : 'start')}
+        onGo={(id) =>
+          id === 'secrets'
+            ? // The step is about storing a value, so it lands on the field that takes one.
+              choose('environment', '#secret-name')
+            : choose(id === 'draft' || id === 'approve' ? 'environment' : 'start')
+        }
       />
 
       <div ref={tabs}>

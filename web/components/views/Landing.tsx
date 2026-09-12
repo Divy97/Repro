@@ -50,9 +50,9 @@ export function LandingHeader({ installUrl, signIn }: { installUrl: string; sign
   return (
     <header className="lander-top">
       <div>
-        <a className="mark" href="/">
-          <span className="mark-name">Repro</span>
-          <span className="mark-tag">reproduce first</span>
+        <a className="wordmark" href="/">
+          <span className="wordmark-name">Repro</span>
+          <span className="wordmark-tag">reproduce first</span>
         </a>
         {/*
           IN-PAGE ANCHORS, not a second door. This page is eight sections and about two

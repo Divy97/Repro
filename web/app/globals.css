@@ -252,11 +252,29 @@ details[open] summary{margin-bottom:.5rem}
  * past. This is the ARIA tabs pattern in full: one stop in the tab order, arrows to move,
  * Home and End to the ends, `aria-selected` and `aria-controls` wired.
  */
-.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule-strong);margin:1.75rem 0 0;
-  /* `overflow-x:auto` clips the focus ring of the first tab, which has `padding-left:0`
-   * below — so the one indicator a keyboard user has was cut off on the left. The padding
-   * and the negative margin give the outline room without moving anything. */
-  overflow-x:auto;padding-left:3px;margin-left:-3px}
+/*
+ * NO SCROLL CONTAINER WHERE THERE IS NOTHING TO SCROLL.
+ *
+ * This carried `overflow-x:auto` at every width, for three tabs whose labels total about
+ * 260px. Two costs, both visible and neither necessary on a desktop:
+ *
+ *   - macOS with "Show scroll bars: Always" cannot use overlay scrollbars, so it paints a
+ *     permanent track on any `overflow:auto` box — a scrollbar for a row that has never
+ *     overflowed. It does not show up in a headless browser, which uses overlay bars, so
+ *     this was reported by a person and could not have been seen here.
+ *   - `padding-left:3px; margin-left:-3px` existed to keep `overflow` from clipping the
+ *     first tab's focus ring. It said it moved nothing; it moved the whole strip 3px left
+ *     of the heading, the checklist, the panel and every paragraph under it — measured at
+ *     l=29 against l=32 for everything else on the page.
+ *
+ * Neither is needed where the row fits, and where it fits there is no clipping to
+ * compensate for. Both move into the width where three tabs could actually run out of
+ * room, which is the only place either ever did anything.
+ */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule-strong);margin:1.75rem 0 0}
+@media (max-width:40rem){
+  .tabs{overflow-x:auto;padding-left:3px;margin-left:-3px}
+}
 .tabs button{margin:0;background:transparent;color:var(--muted);border-radius:0;
   padding:.85rem 1.15rem;font-size:.7rem;letter-spacing:.14em;white-space:nowrap;
   border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -413,11 +431,29 @@ fieldset.bare{border:0;padding:0;margin:0;min-width:0}
  */
 .lander-top > div{max-width:74rem;margin:0 auto;padding:.95rem 0;
   display:flex;align-items:baseline;gap:1rem}
-.mark{display:flex;align-items:baseline;gap:.6rem;text-decoration:none;color:var(--ink)}
-.mark-name{font-family:var(--serif);font-size:1.25rem;font-weight:500;letter-spacing:-.02em}
+/*
+ * `.wordmark`, NOT `.mark`, and the rename is a bug fix.
+ *
+ * `.mark` has meant "the glyph in front of a pass or a fail" since `src/web.ts` — line 143
+ * of this sheet, `font-weight:600;margin-right:.35em`, fifteen call sites across nine
+ * components. Declaring `.mark{display:flex}` down here for the landing wordmark overrode
+ * every one of them: same specificity, later in the file. So every ✓ and ✗ in the
+ * application became a flex container on its own line, and a repository's status line
+ * broke into three:
+ *
+ *   Divy97 · connected 3d ago ·
+ *   ✓
+ *   recipe approved
+ *
+ * The landing page was the one page that looked right, because it was the only page whose
+ * `.mark` was meant to be a flex row. Nothing failed: no test in this repository asserts
+ * that two spans sit on one line.
+ */
+.wordmark{display:flex;align-items:baseline;gap:.6rem;text-decoration:none;color:var(--ink)}
+.wordmark-name{font-family:var(--serif);font-size:1.25rem;font-weight:500;letter-spacing:-.02em}
 /* The half-sentence that makes a common noun mean something. Behind a hairline rather than
  * in a chip, because a chip reads as a version badge and this is a claim. */
-.mark-tag{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;
+.wordmark-tag{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;
   letter-spacing:.16em;color:var(--muted);padding-left:.6rem;
   border-left:1px solid var(--rule-strong)}
 
@@ -626,7 +662,7 @@ h1.display{font-size:clamp(2.1rem,1.4rem + 3.2vw,4.2rem);line-height:1.04;
   .lander-nav{display:none}
 }
 @media (max-width:34rem){
-  .mark-tag{display:none}
+  .wordmark-tag{display:none}
 }
 @media (max-width:56rem){
   /* The conveyor stacks, and the arrows turn with it — a `→` between two boxes that are
