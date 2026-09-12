@@ -6,7 +6,7 @@ import { useJson, usePath } from '../lib/hooks';
 import { Loading } from '../components/bits';
 import { Boundary } from '../components/Boundary';
 import { Chrome } from '../components/Chrome';
-import { Landing, LandingFooter } from '../components/views/Landing';
+import { Landing, LandingFooter, LandingHeader } from '../components/views/Landing';
 import { Repos } from '../components/views/Repos';
 import { Repository } from '../components/views/Repository';
 import { Run } from '../components/views/Run';
@@ -51,7 +51,7 @@ export default function App() {
   }, [path]);
 
   useEffect(() => {
-    if (path !== null) document.title = `${title(path)} — Test Framework v2`;
+    if (path !== null) document.title = `${title(path)} — Repro`;
   }, [path]);
 
   // The front door of a surface that is showing the application on it. `replace`, not
@@ -83,6 +83,14 @@ export default function App() {
         <a className="skip" href="#main">
           Skip to the page
         </a>
+        {/* OUTSIDE `main` for the same reason the footer is: a `banner` landmark nested
+            inside one is either flagged or dropped, depending on the browser's mapping.
+            A visitor arriving on a link had no brand, no orientation and no way back to
+            the call once the hero had scrolled away. */}
+        <LandingHeader
+          installUrl={me.data?.installUrl ?? 'https://github.com/settings/apps/new'}
+          signIn={me.data?.accounts ?? false}
+        />
         <main id="main">
           <Landing
             installUrl={me.data?.installUrl ?? 'https://github.com/settings/apps/new'}

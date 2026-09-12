@@ -354,82 +354,288 @@ fieldset.bare{border:0;padding:0;margin:0;min-width:0}
 
 /* ---- the landing page, which has a different job from every other page ----
  * Every other page here is an instrument: dense, tabular, for somebody already inside.
- * This one has to persuade somebody outside, and looking like a README is its own kind of
- * claim — that nobody cared. So it gets the furniture a product page has.
+ * This one has to persuade somebody OUTSIDE, and — the thing the previous draft missed —
+ * somebody who has never seen any of this before. Looking like a README is its own kind
+ * of claim, that nobody cared; reading like one is a worse claim, that nobody is expected
+ * to understand it.
  *
- * What it does NOT get is invented social proof. No logo wall, no "trusted by", no user
- * count. This product's entire argument is that a claim without evidence is worth
+ * The register is unchanged and deliberate: paper and ink, warm rather than blue-black,
+ * a serif for what people wrote and a monospace for every machine fact. What changed is
+ * the CONTRAST BUDGET. The old sheet spent nothing: every paragraph muted, every section
+ * label 0.68rem uppercase, every band the same padding and the same hairline. Uniform
+ * emphasis is the same as none, and a stranger scanning it had no way to tell which
+ * sentence was the point.
+ *
+ * So this sheet spends:
+ *
+ *   - Display type at 4.6rem against section labels at 0.7rem. A reader who takes in
+ *     nothing but the largest words on the page still leaves knowing what it does.
+ *   - Body prose in `--ink`. `--muted` is demoted to captions and machine metadata, which
+ *     is what it is for. Muted body text was a readability tax on every paragraph.
+ *   - SATURATION ONCE, on the tier stamp. A second spend would cancel the first.
+ *
+ * What it still does NOT get is invented social proof. No logo wall, no "trusted by", no
+ * user count. This product's entire argument is that a claim without evidence is worth
  * nothing, and a fabricated testimonial on the front of it would be the loudest possible
  * admission that we do not believe that.
+ *
+ * No font is fetched, for the reason `layout.tsx` gives: the sealed-container claim is
+ * poorly served by a page that opens a connection to a font CDN to render its own
+ * headline, and the CSP would have to grow a host to allow it. The distinctiveness is
+ * bought with scale, weight and rhythm instead of with a download.
  */
+.landing{--edge:clamp(1.15rem,4vw,3rem)}
+.landing main{max-width:none;padding:0}
+
+/* The header the landing page never had. A visitor arriving from a link had no brand, no
+ * orientation, and no way back to the call once the hero had scrolled off. It is rendered
+ * outside `<main>` by `page.tsx` — a `banner` landmark nested inside `main` is dropped or
+ * flagged depending on the browser's mapping. */
+/*
+ * THE GUTTER IS ON THE OUTSIDE, which is the only way this bar can line up with the page
+ * under it. Every band is `padding:… var(--edge)` on the outer element and `max-width:74rem`
+ * on an inner one, so its content starts at `edge + (available - 74rem) / 2`. This bar had
+ * BOTH on one element, and `box-sizing:border-box` then counts the padding inside the
+ * 74rem while the centring is against the full viewport — so the wordmark sat one whole
+ * gutter (48px at this width) to the right of the headline beneath it, and the button one
+ * gutter to the left of the content's right edge. Same structure as the bands now, so the
+ * three agree by construction rather than by two numbers being kept equal by hand.
+ */
+.lander-top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:saturate(140%) blur(8px);border-bottom:1px solid var(--rule);
+  padding:0 var(--edge)}
+/*
+ * BASELINE, not centre. Centring aligns BOXES, and these boxes are four different heights —
+ * a 1.25rem serif wordmark, a .62rem mono tagline and .68rem mono links — so the text sat
+ * on three different invisible lines. One baseline through the whole bar is the thing the
+ * eye actually reads as aligned. The button is the exception and says so: a bordered
+ * control on a text baseline hangs below the row.
+ */
+.lander-top > div{max-width:74rem;margin:0 auto;padding:.95rem 0;
+  display:flex;align-items:baseline;gap:1rem}
+.mark{display:flex;align-items:baseline;gap:.6rem;text-decoration:none;color:var(--ink)}
+.mark-name{font-family:var(--serif);font-size:1.25rem;font-weight:500;letter-spacing:-.02em}
+/* The half-sentence that makes a common noun mean something. Behind a hairline rather than
+ * in a chip, because a chip reads as a version badge and this is a claim. */
+.mark-tag{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.16em;color:var(--muted);padding-left:.6rem;
+  border-left:1px solid var(--rule-strong)}
+
+/* The anchors. Same treatment as the application's own `header.top nav`, deliberately:
+ * the landing page and the product a visitor lands in should read as one thing. */
+.lander-nav{display:flex;gap:1.5rem;margin-left:2.75rem;font-family:var(--mono);
+  font-size:.68rem;text-transform:uppercase;letter-spacing:.14em}
+.lander-nav a{color:var(--muted);text-decoration:none;padding-bottom:.15rem;
+  border-bottom:1px solid transparent}
+.lander-nav a:hover{color:var(--ink);border-bottom-color:var(--rule-strong)}
+/* The same door as the hero's, kept in reach. Deliberately not `.cta` — the page has
+ * exactly one of those and the tests count them. */
+.top-call{display:inline-block;margin-left:auto;align-self:center;font-family:var(--mono);font-size:.7rem;
+  text-transform:uppercase;letter-spacing:.12em;text-decoration:none;color:var(--ink);
+  border:1px solid var(--control);border-radius:4px;padding:.5rem .9rem;
+  transition:background .16s ease,color .16s ease,transform .16s ease}
+.top-call:hover{background:var(--ink);color:var(--paper)}
+.top-call.big{margin-left:0;background:var(--ink);color:var(--paper);border-color:var(--ink);
+  font-size:.78rem;padding:.8rem 1.6rem}
+.top-call.big:hover{transform:translateY(-1px);opacity:.88}
+
+/* ---- hero ---- */
 .eyebrow{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;
   letter-spacing:.2em;color:var(--muted);margin:0 0 1.4rem}
-.landing main{max-width:none;padding:0}
-.hero-band{padding:5.5rem 2rem 4.5rem;border-bottom:1px solid var(--rule);
+.hero-band{padding:clamp(3rem,7vw,6rem) var(--edge) clamp(2.5rem,5vw,4rem);
+  border-bottom:1px solid var(--rule);
   background-image:linear-gradient(var(--rule) 1px,transparent 1px),
     linear-gradient(90deg,var(--rule) 1px,transparent 1px);
   background-size:100% 5.5rem,5.5rem 100%;background-position:-1px -1px}
-.hero-band > div,.band > div{max-width:74rem;margin:0 auto}
-h1.display{font-size:clamp(2.5rem,1.6rem + 3.6vw,4.6rem);line-height:1.03;
-  letter-spacing:-.028em;max-width:34ch;margin:0 0 1.4rem}
-.lede{font-size:clamp(1.1rem,1rem + .4vw,1.35rem);line-height:1.55;max-width:64ch;
-  color:var(--muted)}
-.lede b{color:var(--ink);font-weight:600}
-.band{padding:4.5rem 2rem;border-bottom:1px solid var(--rule)}
+.hero-grid,.band > div{max-width:74rem;margin:0 auto}
+.hero-say{max-width:46rem}
+
+/* Two-tone, because the headline is two sentences doing different work: the first is what
+ * you do, the second is what you get. Set identically they read as one long clause, which
+ * is how the old page's 15-word headline managed to say nothing at a glance. */
+h1.display{font-size:clamp(2.1rem,1.4rem + 3.2vw,4.2rem);line-height:1.04;
+  letter-spacing:-.03em;font-weight:400;max-width:20ch;margin:0 0 1.5rem}
+.display-a{color:var(--muted)}
+.display-b{color:var(--ink)}
+.display-sm{font-size:clamp(1.7rem,1.2rem + 1.8vw,2.6rem);line-height:1.12;
+  letter-spacing:-.025em;font-weight:400;margin:0 0 1rem;max-width:22ch;
+  font-family:var(--serif);text-transform:none;color:var(--ink);border:0;padding:0}
+
+/* INK, not muted. This is the paragraph that decides whether anybody reads the rest. */
+.lede{font-size:clamp(1.05rem,1rem + .4vw,1.28rem);line-height:1.58;max-width:58ch;
+  color:var(--ink);margin:0 0 2rem}
+.lede b{font-weight:600;box-shadow:inset 0 -.42em 0 color-mix(in srgb,var(--pending) 22%,transparent)}
+.calls-note{font-family:var(--mono);font-size:.7rem;line-height:1.6;color:var(--muted);
+  max-width:44ch;align-self:center}
+
+/* THE SHAPE OF THE THING, before any argument about it: what you hand over, what happens,
+ * what comes back. Three panels and two arrows, and the arrows are `aria-hidden` because
+ * the DOM order already says it. */
+.flow{margin-top:clamp(2.5rem,5vw,3.5rem);display:grid;align-items:stretch;gap:0;
+  grid-template-columns:1fr 2.5rem 1fr 2.5rem 1fr;
+  border:1px solid var(--rule-strong);border-radius:10px;overflow:hidden;
+  background:var(--paper)}
+.flow-cell{padding:1.3rem 1.4rem;display:flex;flex-direction:column;gap:.4rem}
+.flow-cell.out{background:var(--panel)}
+.flow-label{margin:0;font-family:var(--mono);font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--muted)}
+.flow-fact{margin:0;font-family:var(--mono);font-size:.95rem;color:var(--ink);
+  letter-spacing:-.01em;word-break:break-word}
+.flow-say{margin:0;font-size:.92rem;line-height:1.45;color:var(--muted);max-width:34ch}
+.flow-arrow{display:grid;place-items:center;color:var(--muted);font-size:1.1rem;
+  border-left:1px solid var(--rule);border-right:1px solid var(--rule);
+  background:color-mix(in srgb,var(--panel) 60%,transparent)}
+
+/* ---- bands ---- */
+.band{padding:clamp(3rem,6vw,4.75rem) var(--edge);border-bottom:1px solid var(--rule)}
 .band:last-of-type{border-bottom:0}
 /*
- * FIVE SLABS OF EQUAL WEIGHT was most of why this page read flat: every section had the
- * same padding, the same hairline and the same mono eyebrow, so nothing told a reader
- * which one mattered. The band immediately after the hero holds the deliverable — the
- * pull request you actually receive — and it gets the tinted ground and the extra air.
- * One emphasis, spent once; a second would cancel it.
+ * FIVE SLABS OF EQUAL WEIGHT was most of why this page read flat. The band immediately
+ * after the claims holds the deliverable — the pull request you actually receive — and it
+ * gets the tinted ground. One emphasis, spent once.
  */
-.band.lead{background:var(--panel);padding-top:5rem;padding-bottom:5rem}
-/* An `h2` wearing the eyebrow's clothes. It was a `<p>`, which left the eight `h3`s
- * inside the steps and cards following `h1.display` with nothing between them — the whole
- * section structure of the only public page absent from a heading list. */
-.band-head{font-family:var(--mono);font-size:.68rem;font-weight:400;text-transform:uppercase;
-  letter-spacing:.2em;color:var(--muted);margin:0 0 2rem;padding:0;border:0}
-.specimen{border:1px solid var(--rule-strong);border-radius:8px;overflow:hidden;
-  background:var(--panel);max-width:52rem}
-.specimen-bar{display:flex;gap:.9rem;align-items:baseline;padding:.8rem 1.2rem;
-  border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:.7rem;
-  text-transform:uppercase;letter-spacing:.12em;color:var(--muted);background:var(--paper)}
-.specimen-body{padding:1.5rem 1.2rem}
-.verdict{font-family:var(--mono);font-size:.8125rem;line-height:2}
+.band.lead{background:var(--panel)}
+.band.close{background:var(--panel);border-top:1px solid var(--rule)}
+.band.words{background:var(--panel)}
+
+/*
+ * A HEADING ALLOWED TO BE A HEADING.
+ *
+ * These were `.band-head` at 0.68rem uppercase mono — a caption, wearing the same clothes
+ * as the eyebrow, the specimen bar and the flow labels. Six sections of a page all
+ * whispering at the same pitch is why a first-time reader could not find the argument: the
+ * only thing they scan is headings, and there effectively were none. Serif, large, in ink,
+ * and written so that reading only these six tells you what the product does.
+ */
+.band-head{font-family:var(--serif);font-size:clamp(1.45rem,1.15rem + 1.1vw,2.1rem);
+  font-weight:400;line-height:1.15;letter-spacing:-.022em;text-transform:none;
+  color:var(--ink);margin:0 0 .75rem;padding:0;border:0;max-width:24ch}
+/* The one sentence under a heading that says what the section is for. */
+.band-say{margin:0 0 2rem;font-size:1.05rem;line-height:1.55;color:var(--muted);max-width:58ch}
+
+/* ---- the three claims ---- */
+.claim-list{list-style:none;margin:0;padding:0;counter-reset:claim;
+  display:grid;gap:1px;background:var(--rule);
+  grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));
+  border:1px solid var(--rule)}
+.claim-list > li{counter-increment:claim;background:var(--paper);padding:1.75rem 1.5rem}
+.claim-list > li::before{content:counter(claim,decimal-leading-zero);display:block;
+  font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;color:var(--muted);
+  margin-bottom:.9rem}
+.claim{margin:0 0 .55rem;font-size:1.3rem;line-height:1.2;letter-spacing:-.02em;
+  color:var(--ink)}
+.claim-why{margin:0;font-size:.97rem;line-height:1.5;color:var(--muted);max-width:38ch}
+.claim-why i{font-style:italic;color:var(--ink)}
+
+/* ---- specimens: a real artifact, in the shape the app renders it ---- */
+.specimen{border:1px solid var(--rule-strong);border-radius:10px;overflow:hidden;
+  background:var(--paper);max-width:52rem}
+.band.lead .specimen{background:var(--paper)}
+.specimen-bar{display:flex;gap:.9rem;align-items:baseline;flex-wrap:wrap;
+  padding:.75rem 1.2rem;border-bottom:1px solid var(--rule);
+  font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);background:var(--panel)}
+.band.lead .specimen-bar{background:var(--code)}
+/* THE ONE SATURATED THING ON THE PAGE. A verdict is the only fact here that earns colour,
+ * and it carries the word as well as the hue — colour is never the only signal. */
+.stamp{margin-left:auto;color:var(--ok);border:1px solid currentColor;border-radius:3px;
+  padding:.18rem .5rem;letter-spacing:.1em;font-weight:600}
+.specimen-body{padding:1.5rem 1.3rem}
+.verdict{font-family:var(--mono);font-size:.8125rem;line-height:2;margin:0;color:var(--ink)}
 .verdict .n{color:var(--muted);display:inline-block;min-width:3.6rem}
+.verdict .n.total{color:var(--ink);font-weight:600}
 
 /*
  * The five sections of the pull request, as a document rather than a bullet list.
  *
  * Serif, because these are section TITLES somebody wrote and prose explaining them — the
  * type rule at the top of this file splits on who is speaking, and the mono `.verdict`
- * beside it is machine output. Rendering both the same would erase the one distinction
- * the whole product is built on.
+ * beside it is machine output. Rendering both the same would erase the one distinction the
+ * whole product is built on.
  *
- * The counter is `decimal` and not `decimal-leading-zero` like `.step`: these are the
- * parts of one document in order, not stages of a process, and matching the steps would
- * imply a fifth thing happens after the fourth.
+ * The title is now on its OWN LINE in ink with the explanation under it in muted. Run
+ * together as one grey sentence — which is what `<b>The bug</b> — your report, quoted`
+ * was — the five titles could not be scanned, and scanning them is the entire point of
+ * showing the section list.
  */
-.doc{margin:0;padding:0;list-style:none;counter-reset:doc;display:grid;gap:.9rem}
-.doc li{counter-increment:doc;display:grid;grid-template-columns:1.6rem 1fr;gap:.9rem;
-  color:var(--muted);font-size:1rem;line-height:1.5}
-.doc li::before{content:counter(doc) ".";font-family:var(--mono);font-size:.75rem;
-  color:var(--muted);padding-top:.28rem}
-.doc b{color:var(--ink);font-weight:600}
+/*
+ * EVERY CHILD IS PLACED, and that is a bug fix rather than a style.
+ *
+ * A grid container makes a grid item of every child — INCLUDING a bare text node. This
+ * list was `1.6rem 1fr` with a `::before` counter, a `<b>`, and the description as loose
+ * text beside it; the counter took column 1, the `<b>` took column 2, and the description
+ * wrapped onto a second row back in column 1 — the 1.6rem counter track. Every
+ * description on the page rendered one word per line, in a 26px column, which is what the
+ * deployed landing page has been doing. It survived review because the rule reads
+ * correctly: nothing in `grid-template-columns:1.6rem 1fr` says "and put the prose in the
+ * narrow one".
+ *
+ * So the description is an element now, and all three children name their own cell. Auto
+ * placement is what got this wrong and it is not asked again.
+ */
+.doc{margin:0;padding:0;list-style:none;counter-reset:doc;display:grid;gap:1.15rem}
+.doc li{counter-increment:doc;display:grid;grid-template-columns:1.7rem minmax(0,1fr);
+  column-gap:.9rem;row-gap:.2rem}
+.doc li::before{content:counter(doc) ".";grid-column:1;grid-row:1;
+  font-family:var(--mono);font-size:.72rem;color:var(--muted);line-height:1.6}
+.doc b{grid-column:2;grid-row:1;color:var(--ink);font-weight:600;font-size:1.02rem;
+  letter-spacing:-.01em}
+.doc span{grid-column:2;grid-row:2;color:var(--muted);font-size:.96rem;line-height:1.5;
+  max-width:52ch}
+
+/* ---- how a run goes ---- */
 .steps{display:grid;gap:0;counter-reset:step;max-width:56rem}
-.step{display:grid;grid-template-columns:3.2rem 1fr;gap:1.2rem;padding:1.5rem 0;
+.step{display:grid;grid-template-columns:3.2rem 1fr;gap:1.2rem;padding:1.6rem 0;
   border-top:1px solid var(--rule)}
 .step:last-child{border-bottom:1px solid var(--rule)}
 .step::before{counter-increment:step;content:counter(step,decimal-leading-zero);
   font-family:var(--mono);font-size:.75rem;color:var(--muted);letter-spacing:.08em}
-.step h3{margin:0 0 .35rem;font-size:1.15rem;font-weight:500;letter-spacing:-.01em}
-.step p{margin:0;color:var(--muted);font-size:1rem}
+.step h3{margin:0 0 .4rem;font-size:1.18rem;font-weight:500;letter-spacing:-.015em;
+  color:var(--ink)}
+.step p{margin:0;color:var(--muted);font-size:1rem;line-height:1.55;max-width:58ch}
+
+/* ---- what it will not do ---- */
 .cards{display:grid;gap:1px;background:var(--rule);
   grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));border:1px solid var(--rule)}
-.card{background:var(--paper);padding:1.6rem 1.5rem}
-.card h3{margin:0 0 .5rem;font-size:1.1rem;font-weight:500;letter-spacing:-.01em}
-.card p{margin:0;color:var(--muted);font-size:.97rem}
+.card{background:var(--paper);padding:1.7rem 1.5rem}
+.card h3{margin:0 0 .5rem;font-size:1.1rem;font-weight:500;letter-spacing:-.015em;
+  color:var(--ink)}
+.card p{margin:0;color:var(--muted);font-size:.96rem;line-height:1.5}
+
+/* ---- where your code runs ---- */
+.safe{max-width:58rem;display:grid;gap:1rem;border-left:2px solid var(--rule-strong);
+  padding-left:clamp(1rem,2.5vw,1.75rem)}
+.safe p{margin:0;max-width:62ch;color:var(--muted);font-size:1.02rem;line-height:1.6}
+.safe b{color:var(--ink);font-weight:600}
+
+/*
+ * THE GLOSSARY, which is the cheapest comprehension fix on this page.
+ *
+ * Four terms carried the whole argument above and all four are jargon to the visitor this
+ * page exists for. Unglossed, they quietly sorted readers into people who already knew and
+ * people who guessed — on the one page whose entire job is the second group.
+ */
+.glossary{margin:0;display:grid;gap:1px;background:var(--rule);
+  grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));border:1px solid var(--rule)}
+.glossary > div{background:var(--panel);padding:1.5rem 1.4rem}
+.glossary dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--ink);margin:0 0 .55rem}
+.glossary dd{margin:0;font-size:.97rem;line-height:1.55;color:var(--muted);max-width:38ch}
+
+@media (max-width:64rem){
+  .lander-nav{display:none}
+}
+@media (max-width:34rem){
+  .mark-tag{display:none}
+}
+@media (max-width:56rem){
+  /* The conveyor stacks, and the arrows turn with it — a `→` between two boxes that are
+   * now one above the other points at nothing. */
+  .flow{grid-template-columns:1fr}
+  .flow-arrow{border-left:0;border-right:0;border-top:1px solid var(--rule);
+    border-bottom:1px solid var(--rule);padding:.3rem 0;transform:rotate(90deg)}
+  .safe{border-left:0;padding-left:0}
+}
 /*
  * ONE STEP AT A TIME (10n).
  *
@@ -582,16 +788,15 @@ details.quiet[open] > summary{color:var(--ink);margin-bottom:.5rem}
 /* `.sr` — the visually-hidden helper every state above relies on — is already defined
  * further down this sheet, and a second copy is a second thing to keep in step. */
 
-footer.foot{padding:2.5rem 2rem 4rem;border-top:1px solid var(--rule)}
+footer.foot{padding:2.5rem var(--edge) 4rem;border-top:1px solid var(--rule)}
 footer.foot > div{max-width:74rem;margin:0 auto;display:flex;gap:1.5rem;
   flex-wrap:wrap;align-items:baseline;justify-content:space-between}
 footer.foot p{margin:0;font-family:var(--mono);font-size:.72rem;color:var(--muted);
   letter-spacing:.04em;max-width:52ch}
 
 @media (max-width:40rem){
-  .hero-band{padding:3.5rem 1.15rem 3rem;background-size:100% 4rem,4rem 100%}
-  .band{padding:3rem 1.15rem}
-  footer.foot{padding:2rem 1.15rem 3rem}
+  .hero-band{background-size:100% 4rem,4rem 100%}
+  footer.foot{padding-block:2rem 3rem}
   .step{grid-template-columns:2.4rem 1fr;gap:.8rem}
 }
 
@@ -600,7 +805,7 @@ footer.foot p{margin:0;font-family:var(--mono);font-size:.72rem;color:var(--mute
  * triggers vestibular symptoms if it is not switched off when asked. */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
-  .cta:hover{transform:none}
+  .cta:hover,.top-call.big:hover{transform:none}
 }
 
 /* Visually hidden, still read aloud. Used for the live region's announcements and for the

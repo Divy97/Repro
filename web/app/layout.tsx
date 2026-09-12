@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Test Framework v2',
+  title: 'Repro',
   // THE SAME CLAIM THE PAGE MAKES (10n). This kept the headline's old wording — "proves
   // the bug existed" — after the headline itself was corrected for describing a third of
   // what a run does. It is the version a link preview and a search result show, so the

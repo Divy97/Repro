@@ -32,7 +32,7 @@ export function Chrome({ me, path, go }: { me: Me | null; path: string; go: (to:
           }
         }}
       >
-        Test Framework v2
+        Repro
       </a>
       <nav aria-label="Sections">
         {nav.map(([to, label]) => (
