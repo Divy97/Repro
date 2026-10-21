@@ -20,7 +20,7 @@
 
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cp, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RunEvent } from './events.js';
@@ -266,6 +266,13 @@ async function runPhase(spec: PhaseSpec): Promise<PhaseResult> {
   // Only the agent gets somewhere to put commits. A phase container with an
   // output mount could write one, and a phase is supposed to observe, not author.
   const handover = phase === 'agent' ? await mkdtemp(join(tmpdir(), 'engine-handover-')) : undefined;
+  // The Runner chowns `/out` to the repro uid before the bundle is written, and on Linux
+  // that ownership lands on THIS directory. `mkdtemp` made it 0700, so a host that is
+  // neither root nor uid 1000 could no longer reach its own handover: every agent run read
+  // as "no bundle was left at the handover path". Docker Desktop never carries the chown
+  // back, which is why it only ever failed on CI. Search only, no listing — the host needs
+  // to open one path it already knows.
+  if (handover) await chmod(handover, 0o711);
 
   // Named so the host can still reach it after the client is gone: killing
   // `docker run` does not stop the container the daemon is running, so a wedge

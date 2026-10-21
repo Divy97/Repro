@@ -10,7 +10,7 @@
 // the executor above would be demultiplexing two protocols while pretending it had one.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -118,6 +118,28 @@ describe.skipIf(!dockerAvailable())('the same Runner, started the way a microVM 
   const build = () => execFileSync('docker', ['build', '-q', '-t', IMAGE, '.'], { cwd: process.cwd() });
 
   /**
+   * The Runner is root in here and makes `/spool/out` 0700 — it must, or the repro user
+   * could forge the replies recovery reads. On Linux that mode and owner land on the host
+   * too, so this process (uid 1001 on a CI runner) can neither read a mirrored reply nor
+   * delete the spool afterwards. Docker Desktop never carries them back, which is why it
+   * only failed on CI. Read it, and hand it back, through the image, as root.
+   */
+  const asRoot = (spool: string, script: string) =>
+    execFileSync('docker', ['run', '--rm', '--pull', 'never', '-v', `${spool}:/spool`, '--entrypoint', 'sh', IMAGE, '-c', script], {
+      encoding: 'utf8',
+    });
+  const spools: string[] = [];
+  afterEach(() => {
+    for (const spool of spools.splice(0)) {
+      try {
+        asRoot(spool, `chown -R ${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0} /spool`);
+      } catch {
+        // The image is gone or the spool already is. The outer `rmSync` says which.
+      }
+    }
+  });
+
+  /**
    * The image, entered the way the executor will enter it: no stdin, a Job read from a
    * file, and `/blobs` an ordinary directory on the machine's own filesystem rather than a
    * mount. `sh -c` only to create the store the worker would have written first.
@@ -149,6 +171,7 @@ describe.skipIf(!dockerAvailable())('the same Runner, started the way a microVM 
 
   const runAsVm = (repo: string, job: object, extra: string[] = []) => {
     const spool = scratch('vm-spool-');
+    spools.push(spool);
     mkdirSync(join(spool, 'in'), { recursive: true });
     writeFileSync(join(spool, 'job.json'), JSON.stringify(job));
     const args = [
@@ -432,7 +455,7 @@ describe.skipIf(!dockerAvailable())('the same Runner, started the way a microVM 
 
     // The reply is ALSO on disk, which is what recovery reads when the stream drops —
     // the spike found re-attaching to a command's output replays a window and then closes.
-    const mirrored = JSON.parse(readFileSync(join(spool, 'out', 'h1.json'), 'utf8')) as unknown;
+    const mirrored = JSON.parse(asRoot(spool, 'cat /spool/out/h1.json')) as unknown;
     expect(mirrored).toMatchObject({ result: { id: 'h1', ok: true } });
 
     // Ending is the host's to say, and it says it the same way.
