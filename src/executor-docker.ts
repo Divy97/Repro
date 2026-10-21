@@ -20,7 +20,7 @@
 
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cp, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RunEvent } from './events.js';
@@ -57,6 +57,35 @@ const CONTAINER_TIMEOUT_MS = 3_600_000;
 
 /** Unique per container within a process, so a timed-out one can be named and removed. */
 let containers = 0;
+
+/**
+ * Where an agent container leaves its bundle, as a HOST directory.
+ *
+ * The Runner chowns `/out` to the repro uid before writing the bundle, and on Linux that
+ * ownership lands on this directory. A plain 0700 `mkdtemp` then locks out a host that is
+ * neither root nor uid 1000 — a CI runner is uid 1001 — and every agent run read as "no
+ * bundle was left at the handover path". Docker Desktop never carries the chown back,
+ * which is why it only ever failed on CI.
+ *
+ * So the mounted directory is 0711, letting the host open the one path it already knows,
+ * and it sits inside a 0700 parent of the host's own, so nobody else on the machine can
+ * reach it by reading the name out of `/tmp`. One parent per process: the orchestrator
+ * removes each handover, and a parent per run would leak one empty directory each time.
+ */
+let handoverParent: Promise<string> | undefined;
+async function handoverDir(): Promise<string> {
+  handoverParent ??= mkdtemp(join(tmpdir(), 'engine-handovers-'));
+  let dir: string;
+  try {
+    dir = await mkdtemp(join(await handoverParent, 'h-'));
+  } catch {
+    // A long-lived worker outlives a `/tmp` cleaner that took the empty parent. Once.
+    handoverParent = mkdtemp(join(tmpdir(), 'engine-handovers-'));
+    dir = await mkdtemp(join(await handoverParent, 'h-'));
+  }
+  await chmod(dir, 0o711);
+  return dir;
+}
 
 /** The one executor every run had until M10. */
 export function dockerExecutor(): Executor {
@@ -265,7 +294,7 @@ async function runPhase(spec: PhaseSpec): Promise<PhaseResult> {
   await writeFile(join(store, '.evidence-store'), '');
   // Only the agent gets somewhere to put commits. A phase container with an
   // output mount could write one, and a phase is supposed to observe, not author.
-  const handover = phase === 'agent' ? await mkdtemp(join(tmpdir(), 'engine-handover-')) : undefined;
+  const handover = phase === 'agent' ? await handoverDir() : undefined;
 
   // Named so the host can still reach it after the client is gone: killing
   // `docker run` does not stop the container the daemon is running, so a wedge

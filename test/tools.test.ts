@@ -350,7 +350,19 @@ describe('every result is bounded', () => {
     // fires its failure on the child object, and with nothing listening it escapes as
     // an UNCAUGHT EXCEPTION — which in production is the Runner dying mid-run, and in
     // this suite was the whole file dying. Found by the suite, not by review.
-    const result = await callTool(host(world()), 'browser_navigate', { url: 'http://127.0.0.1:1/' });
+    //
+    // A path that cannot exist, rather than trusting this machine to have no browser. A
+    // GitHub runner HAS one at the default path, so the tool launched a real Chromium and
+    // this asserted the opposite of what it set out to — red on every CI run.
+    const previous = process.env.ENGINE_CHROMIUM;
+    process.env.ENGINE_CHROMIUM = join(tmpdir(), 'no-such-chromium');
+    let result: Awaited<ReturnType<typeof callTool>>;
+    try {
+      result = await callTool(host(world()), 'browser_navigate', { url: 'http://127.0.0.1:1/' });
+    } finally {
+      if (previous === undefined) delete process.env.ENGINE_CHROMIUM;
+      else process.env.ENGINE_CHROMIUM = previous;
+    }
 
     expect(result.ok).toBe(false);
     // And it says which fault it is: a missing binary, not a timeout with no cause.
