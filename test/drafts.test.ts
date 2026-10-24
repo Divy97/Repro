@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import { clearDraft, loadDraft, saveDraft } from '../src/drafts.js';
 import type pg from 'pg';
 import { connect } from '../src/store.js';
@@ -36,11 +37,8 @@ afterAll(async () => {
 });
 
 describe('the draft store, against a real database', () => {
-  test('round-trips, a re-save overwrites, and clearing removes the row', async () => {
-    if (!client) {
-      console.log(`SKIPPED (recipe_drafts): ${why}`);
-      return;
-    }
+  test('round-trips, a re-save overwrites, and clearing removes the row', async (context) => {
+    if (!client) return skip(context, `recipe_drafts: ${why}`);
     const repo = `owner/repo-${randomUUID().slice(0, 8)}`;
     try {
       expect(await loadDraft(client, repo)).toBeNull();

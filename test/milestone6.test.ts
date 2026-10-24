@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import { confidence } from '../src/confidence.js';
 import type { RunEvent } from '../src/events.js';
 import { demoRunEvents } from '../src/fixtures/demo-run.js';
@@ -447,11 +448,8 @@ afterAll(async () => {
 });
 
 describe('the installation record, against a real database', () => {
-  it('round-trips, and a removal is a mark rather than a delete', async () => {
-    if (!client) {
-      console.log(`SKIPPED (installations): ${why}`);
-      return;
-    }
+  it('round-trips, and a removal is a mark rather than a delete', async (context) => {
+    if (!client) return skip(context, `installations: ${why}`);
     const repo = `owner/repo-${randomUUID().slice(0, 8)}`;
     try {
       expect(await loadInstallation(client, repo)).toBeNull();
@@ -494,11 +492,8 @@ describe('the installation record, against a real database', () => {
 });
 
 describe('what a run cost, against a real database', () => {
-  it('round-trips including the cache columns, which are the whole point of the table', async () => {
-    if (!client) {
-      console.log(`SKIPPED (run usage): ${why}`);
-      return;
-    }
+  it('round-trips including the cache columns, which are the whole point of the table', async (context) => {
+    if (!client) return skip(context, `run usage: ${why}`);
     const runId = randomUUID();
     const row = {
       run_id: runId,
@@ -550,11 +545,8 @@ describe('what a run cost, against a real database', () => {
 });
 
 describe('the projection can be dropped and replayed', () => {
-  it('rebuilds byte-identical rows, which is the claim the README rests on', async () => {
-    if (!client) {
-      console.log(`SKIPPED (projection rebuild): ${why}`);
-      return;
-    }
+  it('rebuilds byte-identical rows, which is the claim the README rests on', async (context) => {
+    if (!client) return skip(context, `projection rebuild: ${why}`);
     const runId = randomUUID();
     const events: RunEvent[] = [
       ...githubRun(runId),

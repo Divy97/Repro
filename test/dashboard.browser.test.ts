@@ -45,6 +45,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Db } from '../src/store.js';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 // TYPE ONLY, and that is load-bearing. `src/browser.ts` reads `ENGINE_CHROMIUM` into a
 // module-level `const` at import time, so a static import here would freeze the default
 // `/usr/bin/chromium-browser` before `beforeAll` ever runs. The class is pulled in with a
@@ -267,12 +268,6 @@ const previousChromium = process.env.ENGINE_CHROMIUM;
 const previousBinary = process.env.ENGINE_CHROMIUM_BIN;
 const previousProfile = process.env.ENGINE_CHROMIUM_PROFILE;
 
-/** House style (`test/store.test.ts`): an explicit skip naming what is missing. */
-const skipped = (subject: string): boolean => {
-  if (!why) return false;
-  console.log(`SKIPPED (${subject}): ${why}`);
-  return true;
-};
 
 beforeAll(async () => {
   const binary = CANDIDATES.find((path) => existsSync(path));
@@ -437,8 +432,8 @@ const clickThrough = async (selector: string, until: RegExp, path: string): Prom
 const MISSING = 'missing';
 
 describe.sequential('the dashboard, driven in a real browser', () => {
-  test('the launcher runs the browser it was pointed at, rather than a desktop instance', () => {
-    if (skipped('the launcher')) return;
+  test('the launcher runs the browser it was pointed at, rather than a desktop instance', (context) => {
+    if (why) return skip(context, why);
     // Asserted before anything depends on it: a wrapper that silently handed off to a
     // running Chrome would fail every test below with "the browser did not come up", and
     // the cause would be four layers away from the message.
@@ -446,8 +441,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(printed).toMatch(/chrom/i);
   });
 
-  test('the front door of a surface with no accounts is the application, not a pitch', async () => {
-    if (skipped('the front door')) return;
+  test('the front door of a surface with no accounts is the application, not a pitch', async (context) => {
+    if (why) return skip(context, why);
     // `serve.ts` has one operator on 127.0.0.1 and no login. Showing them a marketing page
     // for the thing they have already installed is the landing page's worst placement, so
     // the bundle replaces `/` with `/repos` the moment `/api/me` says there are no accounts.
@@ -461,8 +456,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/repositories/i);
   });
 
-  test('the scripts it serves are allowed by the policy it serves', async () => {
-    if (skipped('the policy')) return;
+  test('the scripts it serves are allowed by the policy it serves', async (context) => {
+    if (why) return skip(context, why);
     // THE assertion that could not exist before 10i, and the one most likely to break
     // silently. `test/web.test.ts` guarded the old pages by asserting they contained no
     // `<script>` at all; a bundle cannot keep that, so what replaces it is a CSP with a
@@ -479,8 +474,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toContain('acme/widgets');
   });
 
-  test('a path with no file behind it resolves to a view, not to a 404', async () => {
-    if (skipped('the router')) return;
+  test('a path with no file behind it resolves to a view, not to a 404', async (context) => {
+    if (why) return skip(context, why);
     // A run id cannot be pre-rendered. `/runs/<uuid>` is not a file and never will be, so
     // the plane hands the shell out for it and the bundle decides — an arrangement that is
     // one rewrite rule away from serving `not found` for every run in the product.
@@ -488,8 +483,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/the reproduction arm/i);
   });
 
-  test('the evidence page shows base red, fix green, the tier and every ground', async () => {
-    if (skipped('the evidence page')) return;
+  test('the evidence page shows base red, fix green, the tier and every ground', async (context) => {
+    if (why) return skip(context, why);
     // TWO REQUESTS, and this waited for one. `visit` settles on the Evidence section,
     // which comes from `/evidence`; the timeline below it is built from a SEPARATE
     // `/events` read, and the assertions further down were being made before that read had
@@ -535,8 +530,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/egress is not a seal check/i);
   });
 
-  test('the repository screen puts starting a run first, and says why it cannot', async () => {
-    if (skipped('the repository screen')) return;
+  test('the repository screen puts starting a run first, and says why it cannot', async (context) => {
+    if (why) return skip(context, why);
     // The screen 10i exists for. `POST /api/runs` was built, authorized and tested in 10g
     // and nothing in the product called it.
     const page = await visit('/repos/acme/widgets', /start a run/i);
@@ -545,8 +540,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/no GitHub App/i);
   });
 
-  test('the tabs are a tablist, and the fragment says which one', async () => {
-    if (skipped('the tabs')) return;
+  test('the tabs are a tablist, and the fragment says which one', async (context) => {
+    if (why) return skip(context, why);
     await visit('/repos/acme/widgets', /start a run/i);
     const panel = await clickThrough('[role=tab]:nth-of-type(2)', /ready to test bugs/i, '/repos/acme/widgets#environment');
     // `acme/widgets` has commands in use and nothing missing, so this is the LAST step —
@@ -557,8 +552,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(panel).toMatch(/values this project runs with/i);
   });
 
-  test('a repository with no approved recipe opens on the tab where the work is', async () => {
-    if (skipped('the unonboarded default')) return;
+  test('a repository with no approved recipe opens on the tab where the work is', async (context) => {
+    if (why) return skip(context, why);
     // `start` was the default for EVERY repository, so the first thing somebody saw after
     // connecting one was the Start tab — the one action they cannot take yet — while the
     // recipe awaiting their approval sat behind a tab they had no reason to open. The
@@ -573,8 +568,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(await visit('/repos/acme/widgets', /start a run/i)).toMatch(/Pick the issue to work on|no GitHub App/i);
   });
 
-  test('the checklist tells a reader where they are and what to do next', async () => {
-    if (skipped('the checklist')) return;
+  test('the checklist tells a reader where they are and what to do next', async (context) => {
+    if (why) return skip(context, why);
     // The whole point of 10n, driven for real: `steps()` has unit tests, and this asserts
     // the thing they cannot — that it is mounted, on the page, above the tabs, on a
     // repository that has not been onboarded.
@@ -592,8 +587,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/check the commands and use them/i);
   });
 
-  test('approving shows the commands that will run, not a wall of JSON', async () => {
-    if (skipped('the recipe review')) return;
+  test('approving shows the commands that will run, not a wall of JSON', async (context) => {
+    if (why) return skip(context, why);
     // The repository with a DRAFT, because that is the step where somebody reads commands
     // an agent wrote and authorises them. `acme/widgets` has commands already in use and
     // is therefore on the finished step, which offers no review to do.
@@ -629,7 +624,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(panel).not.toMatch(/are single commands, each optional/i);
   });
 
-  test('the run register renders, and links to the run', async () => {
+  test('the run register renders, and links to the run', async (context) => {
+    if (why) return skip(context, why);
     // The one screen with a link to it on every page in the product, and the one the rest
     // of this file never visited.
     const page = await visit('/runs', /acme.widgets/);
@@ -640,8 +636,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(run).toMatch(/acme.widgets#41/);
   });
 
-  test('the repository list shows both states, and only one of them carries the fix', async () => {
-    if (skipped('the repository list')) return;
+  test('the repository list shows both states, and only one of them carries the fix', async (context) => {
+    if (why) return skip(context, why);
     const page = await visit('/repos', /acme.legacy/);
     expect(page).toContain('acme/widgets');
     expect(page).toContain('acme/legacy');
@@ -649,8 +645,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(page).toMatch(/not onboarded yet/i);
   });
 
-  test('the evidence page screenshots as a real PNG', async () => {
-    if (skipped('the screenshot')) return;
+  test('the evidence page screenshots as a real PNG', async (context) => {
+    if (why) return skip(context, why);
     await visit(`/runs/${DEMO_RUN_ID}`, /the reproduction arm/i);
     const shot = await browser!.screenshot();
     // The PNG signature, and a size that is not an empty viewport.
@@ -658,8 +654,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(shot.length).toBeGreaterThan(10_000);
   });
 
-  test('nothing on any page wrote an error to the browser console', async () => {
-    if (skipped('the console')) return;
+  test('nothing on any page wrote an error to the browser console', async (context) => {
+    if (why) return skip(context, why);
     // THE load-bearing assertion of this file. `navigate()` resolves happily for a 500 and
     // for a page that failed to fetch half of itself; the console is the only signal here
     // that tells a served document from a broken one.
@@ -676,8 +672,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(noisy, `pages visited: ${visited.join(', ')}`).toEqual([]);
   });
 
-  test('sees an uncaught page exception, which is the bug class the browser exists for', async () => {
-    if (skipped('the throwing page')) return;
+  test('sees an uncaught page exception, which is the bug class the browser exists for', async (context) => {
+    if (why) return skip(context, why);
     const page = await throwingPage();
     try {
       await browser!.navigate(page.url);
@@ -705,8 +701,8 @@ describe.sequential('the dashboard, driven in a real browser', () => {
  * resolves to an `id` that really exists.
  */
 describe.sequential('the floor, in the browser that renders it', () => {
-  test('every screen has one main, one h1, and a skip link that reaches it', async () => {
-    if (skipped('the landmarks')) return;
+  test('every screen has one main, one h1, and a skip link that reaches it', async (context) => {
+    if (why) return skip(context, why);
     for (const [path, wait] of [
       ['/repos', /repositories/i],
       [`/runs/${DEMO_RUN_ID}`, /the reproduction arm/i],
@@ -729,8 +725,8 @@ describe.sequential('the floor, in the browser that renders it', () => {
     }
   });
 
-  test('the tablist announces itself as one, with a selected tab and a labelled panel', async () => {
-    if (skipped('the tablist')) return;
+  test('the tablist announces itself as one, with a selected tab and a labelled panel', async (context) => {
+    if (why) return skip(context, why);
     await browser!.navigate(`${base}/repos/acme/widgets`);
     visited.push('/repos/acme/widgets');
     await settle(/start a run/i, '/repos/acme/widgets');
@@ -741,8 +737,8 @@ describe.sequential('the floor, in the browser that renders it', () => {
     expect(await browser!.text('[role=tabpanel][aria-labelledby]')).not.toBe(MISSING);
   });
 
-  test('every input on the environment screen has a label pointing at it', async () => {
-    if (skipped('the labels')) return;
+  test('every input on the environment screen has a label pointing at it', async (context) => {
+    if (why) return skip(context, why);
     // CLICKED, not navigated to `#environment` directly. A fragment-only change on the URL
     // already loaded is a `hashchange` rather than a navigation, and CDP's `Page.navigate`
     // does not resolve for one — the test hung for thirty seconds rather than failing.
@@ -785,8 +781,8 @@ describe.sequential('the floor, in the browser that renders it', () => {
     await labelled('secret-value', /value/i);
   });
 
-  test('the live region exists before there is anything to announce', async () => {
-    if (skipped('the live region')) return;
+  test('the live region exists before there is anything to announce', async (context) => {
+    if (why) return skip(context, why);
     // Inserting a live region and its content in the same tick announces nothing, which is
     // the single most common way a "we added an aria-live" fix does not work.
     await browser!.navigate(`${base}/repos`);
@@ -886,8 +882,8 @@ describe.sequential('a run, while it happens', () => {
     live = null;
   });
 
-  test('fills in as the events land, and becomes a verdict when they stop', async () => {
-    if (skipped('the live run')) return;
+  test('fills in as the events land, and becomes a verdict when they stop', async (context) => {
+    if (why) return skip(context, why);
     const before = browser!.console();
     // The fixture answered, before anything waits on what it says. A `settle` against a
     // browser error page burns its whole timeout and then blames the feature.
@@ -973,8 +969,8 @@ describe.sequential('a stranger on a surface with accounts', () => {
     hosted = null;
   });
 
-  test('is shown the way in, and no request is made that cannot succeed', async () => {
-    if (skipped('the signed-out path')) return;
+  test('is shown the way in, and no request is made that cannot succeed', async (context) => {
+    if (why) return skip(context, why);
     const before = browser!.console();
     await browser!.navigate(`${hostedBase}/repos`);
     visited.push('/repos (signed out)');
@@ -989,8 +985,8 @@ describe.sequential('a stranger on a surface with accounts', () => {
     expect(since).not.toMatch(/^\[(error|warning)\]/im);
   });
 
-  test('and the front door is the landing page, not the application', async () => {
-    if (skipped('the front door')) return;
+  test('and the front door is the landing page, not the application', async (context) => {
+    if (why) return skip(context, why);
     // `dashboardRoutes` returns null for `/` when nobody is signed in, so the bundle answers
     // — and the bundle renders the pitch, because `/api/me` says there are accounts and this
     // visitor is not in one.

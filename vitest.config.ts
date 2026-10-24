@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { SkipGate } from './test/fixtures/skip.js';
 
 // THE SUITE NEVER READS `.env`. That file is the operator's configuration, and in the main
 // checkout its `DATABASE_URL` is the production database. While this file loaded it, the
@@ -55,6 +56,8 @@ export default defineConfig({
   },
   test: {
     testTimeout: 30_000,
+    // A skip in CI is a check that did not run on a green build. See `test/fixtures/skip.ts`.
+    reporters: ['default', new SkipGate()],
     // `.claude/worktrees/*` holds full checkouts of this repository, so the default
     // glob collected every test file TWICE — 18 files where there are 9, and every
     // container test run against a copy of `src` nobody is editing. It doubled the

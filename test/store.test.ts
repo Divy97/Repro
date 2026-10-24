@@ -13,6 +13,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import type { RunEvent } from '../src/events.js';
 import { loadRecipe, saveRecipe, type Recipe } from '../src/recipe.js';
 import type pg from 'pg';
@@ -44,13 +45,8 @@ afterAll(async () => {
 });
 
 describe('the recipe store, against a real database', () => {
-  test('a recipe round-trips, and a second approval replaces the first', async () => {
-    if (!client) {
-      // An explicit skip with the reason in it, rather than a silent pass. This is
-      // the only coverage the recipe store's SQL has.
-      console.log(`SKIPPED (recipe store): ${why}`);
-      return;
-    }
+  test('a recipe round-trips, and a second approval replaces the first', async (context) => {
+    if (!client) return skip(context, `recipe store: ${why}`);
     const repo = `owner/repo-${randomUUID().slice(0, 8)}`;
     const first: Recipe = {
       install: 'npm install',
@@ -79,11 +75,8 @@ describe('the recipe store, against a real database', () => {
 });
 
 describe('the tail s query, against a real database', () => {
-  test('seq > $2 is the whole of resumption', async () => {
-    if (!client) {
-      console.log(`SKIPPED (event tail): ${why}`);
-      return;
-    }
+  test('seq > $2 is the whole of resumption', async (context) => {
+    if (!client) return skip(context, `event tail: ${why}`);
     const runId = randomUUID();
     const events: RunEvent[] = [
       {
@@ -159,11 +152,8 @@ describe('the tail s query, against a real database', () => {
  * long enough.
  */
 describe('a database connection that dies under the process', () => {
-  test('a connection killed while IDLE in the pool does not take the process down', async () => {
-    if (!client) {
-      console.log(`SKIPPED (idle connection): ${why}`);
-      return;
-    }
+  test('a connection killed while IDLE in the pool does not take the process down', async (context) => {
+    if (!client) return skip(context, `idle connection: ${why}`);
     // Serve a query so a connection exists, and note which one. It goes back into the
     // pool idle the moment this resolves — nobody is awaiting it any more, which is
     // precisely why its death has no promise to reject and used to reach the process.
@@ -211,11 +201,8 @@ describe('a database connection that dies under the process', () => {
     expect(Number(after.rows[0].pid)).not.toBe(idlePid);
   });
 
-  test('every connection the pool holds can die at once and the process still does not', async () => {
-    if (!client) {
-      console.log(`SKIPPED (pool recovery): ${why}`);
-      return;
-    }
+  test('every connection the pool holds can die at once and the process still does not', async (context) => {
+    if (!client) return skip(context, `pool recovery: ${why}`);
     // The hosted failure this whole change is about: not one reaped socket, but the
     // database going away and taking every connection with it. Concurrent queries force
     // the pool to open more than one, and each reports the backend serving it.

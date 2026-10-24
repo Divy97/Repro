@@ -13,6 +13,7 @@
 // question, and it answers it with real containers.
 
 import { afterAll, describe, expect, it } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import { JOB_KINDS, type JobKind } from '../src/plane.js';
 import { engineExecute } from '../src/runner-main.js';
 import type { DaemonIo, DaemonJob } from '../src/daemon.js';
@@ -282,8 +283,8 @@ describe('a runner takes the kinds it asked for and no others', () => {
     return runId;
   };
 
-  it('claims only the kind it named, and leaves the rest queued', async () => {
-    if (!client) return void console.log(`SKIPPED (the job queue): ${why}`);
+  it('claims only the kind it named, and leaves the rest queued', async (context) => {
+    if (!client) return skip(context, `the job queue: ${why}`);
     await ready(client);
     const runJob = await queue('run');
     const proveJob = await queue('prove');
@@ -303,8 +304,8 @@ describe('a runner takes the kinds it asked for and no others', () => {
     expect(Number(rows[0]!.dispatches)).toBe(0);
   });
 
-  it('and a runner that names nothing takes any of them, which is what every older one does', async () => {
-    if (!client) return void console.log(`SKIPPED (the job queue): ${why}`);
+  it('and a runner that names nothing takes any of them, which is what every older one does', async (context) => {
+    if (!client) return skip(context, `the job queue: ${why}`);
     // ITS OWN INSTALLATION, and the queue drained before the assertion.
     //
     // The first version of this asked only "did it claim something" on the shared
@@ -341,8 +342,8 @@ describe('a runner takes the kinds it asked for and no others', () => {
     expect(JOB_KINDS).toContain(claimed!.kind);
   });
 
-  it('the kind survives the round trip, so a worker does what was queued', async () => {
-    if (!client) return void console.log(`SKIPPED (the job queue): ${why}`);
+  it('the kind survives the round trip, so a worker does what was queued', async (context) => {
+    if (!client) return skip(context, `the job queue: ${why}`);
     const id = await queue('draft');
     const { runner } = await pairRunner(client, { installationId: INSTALLATION, name: 'kinds-test-rt' });
     made.runners.push(runner.id);
@@ -467,8 +468,8 @@ describe('a finding comes home, and a bad draft is not retried five times', () =
     return { runId, post, claimed };
   };
 
-  it('a proof lands where the onboarding screen reads it', async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it('a proof lands where the onboarding screen reads it', async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     await ready(client);
     // A RECIPE FIRST, because `saveProof` is an `update` — a proof is a fact ABOUT an
     // approved recipe, so there is nothing to attach one to without it. That is also true
@@ -482,8 +483,8 @@ describe('a finding comes home, and a bad draft is not retried five times', () =
     expect(rows[0]?.state).toBe('ready');
   });
 
-  it('AN UNPARSEABLE DRAFT IS STORED, not rejected — the human is the control', async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it('AN UNPARSEABLE DRAFT IS STORED, not rejected — the human is the control', async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     // What an untrusted agent actually produces some of the time. `parseRecipe` refuses it;
     // `Environment.tsx` renders it as a pre-filled box that says an agent wrote it, or falls
     // back to the skeleton if it cannot even be stringified. Either way a person decides.
@@ -496,8 +497,8 @@ describe('a finding comes home, and a bad draft is not retried five times', () =
     expect(rows[0]?.draft).toEqual({ install: 42, services: 'not an array' });
   });
 
-  it('but a draft that is not an object at all is refused, because no box can be filled from it', async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it('but a draft that is not an object at all is refused, because no box can be filled from it', async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     const { post } = await heldJob('draft');
     for (const draft of ['a string', 42, [1, 2]]) {
       const answer = await post({ draft });
@@ -505,14 +506,14 @@ describe('a finding comes home, and a bad draft is not retried five times', () =
     }
   });
 
-  it('and a body naming neither is refused rather than silently storing nothing', async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it('and a body naming neither is refused rather than silently storing nothing', async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     const { post } = await heldJob('prove');
     expect((await post({}))?.status).toBe(400);
   });
 
-  it('a repo named in the BODY is ignored — the job decides which repository this is', async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it('a repo named in the BODY is ignored — the job decides which repository this is', async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     // The route reads `facts.repo` from the job. Honouring a body field instead would let
     // any paired runner overwrite ANY repository's proof or draft on this plane, which is
     // somebody else's onboarding — the same reason `/runner/runs/:id/secrets` takes no
@@ -530,8 +531,8 @@ describe('a finding comes home, and a bad draft is not retried five times', () =
     expect(after.rows[0]?.draft ?? null).toEqual(before.rows[0]?.draft ?? null);
   });
 
-  it("a runner that does not hold the run cannot write another repository's draft", async () => {
-    if (!client) return void console.log(`SKIPPED (findings): ${why}`);
+  it("a runner that does not hold the run cannot write another repository's draft", async (context) => {
+    if (!client) return skip(context, `findings: ${why}`);
     // The repository comes from the JOB, never the body — a runner that could name one
     // would be able to overwrite any repository's draft on this plane, which is somebody
     // else's onboarding.
