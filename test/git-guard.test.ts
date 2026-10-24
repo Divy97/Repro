@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,13 +7,12 @@ import { describe, expect, it } from 'vitest';
 
 const GUARD = fileURLToPath(new URL('../scripts/git-guard.mjs', import.meta.url));
 
-/** Runs the hook the way Claude Code does: the tool call as JSON on stdin, the session's root in the env. */
-const hook = (command: string, cwd = process.cwd(), project: string | null = cwd) => {
-  const { CLAUDE_PROJECT_DIR: _, ...env } = process.env;
-  const result = spawnSync('node', [GUARD], {
+/** Runs the hook the way Claude Code does: the tool call as JSON on stdin. */
+const hook = (command: string, cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env) => {
+  const result = spawnSync(process.execPath, [GUARD], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd, tool_input: { command } }),
     encoding: 'utf8',
-    env: project === null ? env : { ...env, CLAUDE_PROJECT_DIR: project },
+    env,
   });
   return { blocked: result.status === 2, status: result.status, stderr: result.stderr };
 };
@@ -58,97 +57,119 @@ describe('the git guard refuses blind staging', () => {
   });
 });
 
-/** A repository whose `src/routes.ts` is committed, as on 2026-09-09. */
-const repository = () => {
-  const root = mkdtempSync(join(tmpdir(), 'git-guard-'));
-  const git = (...args: string[]) =>
-    execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { encoding: 'utf8' });
-  git('init', '-q');
-  mkdirSync(join(root, 'src'));
-  writeFileSync(join(root, 'src/routes.ts'), 'export const checkKey = () => true;\n');
-  writeFileSync(join(root, 'src/other.ts'), 'export const other = 1;\n');
-  git('add', 'src/routes.ts', 'src/other.ts');
-  git('commit', '-q', '-m', 'base');
-  return { root, file: join(root, 'src/routes.ts') };
-};
-
-describe('the git guard refuses a checkout that would delete uncommitted work', () => {
-  it('refuses the revert that deleted the checkKey seam while it was uncommitted', () => {
-    const { root, file } = repository();
-    writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n// the fix, not yet committed\n');
-    const { blocked, stderr } = hook('git checkout -- src/routes.ts', root);
+describe('the git guard refuses a command that overwrites working-tree files', () => {
+  it('refuses the revert that deleted the uncommitted checkKey seam on 2026-09-09', () => {
+    const { blocked, stderr } = hook('git checkout -- src/routes.ts');
     expect(blocked).toBe(true);
-    expect(stderr).toContain('src/routes.ts');
     expect(stderr).toContain('scripts/mutate.mts');
   });
 
-  it.each(['git checkout HEAD -- src', 'git checkout .', 'git restore src/routes.ts', 'git reset --hard', 'cd src && git checkout -- routes.ts'])(
-    'refuses %s over the same edits',
-    (command) => {
-      const { root, file } = repository();
-      writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n');
-      expect(hook(command, root).blocked).toBe(true);
-    },
-  );
+  it.each([
+    'git checkout HEAD -- src',
+    'git checkout .',
+    'git restore src/routes.ts',
+    'git restore --staged --worktree src/routes.ts',
+    'git reset --hard',
+    'git fetch && git reset --hard origin/main',
+    'cd src && git checkout -- routes.ts',
+  ])('refuses %s', (command) => {
+    expect(hook(command).blocked).toBe(true);
+  });
 
-  it('allows a checkout of a file with nothing uncommitted in it', () => {
-    const { root, file } = repository();
-    writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n');
-    expect(hook('git checkout -- src/other.ts', root).blocked).toBe(false);
-    expect(hook('git restore --staged src/routes.ts', root).blocked).toBe(false);
+  it.each([
+    'git restore --staged src/routes.ts',
+    'git checkout main',
+    'git switch -C feature origin/feature',
+    'git stash push -m "mutation-a01f" -- src/routes.ts',
+    'git reset --soft HEAD~1',
+  ])('allows %s, which keeps working-tree edits', (command) => {
+    expect(hook(command)).toEqual({ blocked: false, status: 0, stderr: '' });
   });
 });
 
-/** A repository with uncommitted work whose own config runs a script that leaves a marker. */
-const hostile = (parent: string) => {
-  const root = mkdtempSync(join(parent, 'hostile-'));
+/** A script that leaves a marker when something runs it. */
+const tripwire = (dir: string, marker: string) => {
+  const script = join(dir, `tripwire-${Math.random().toString(36).slice(2)}.sh`);
+  writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\ncat\n`);
+  chmodSync(script, 0o755);
+  return script;
+};
+
+/** A committed file `f` with an uncommitted edit on top. */
+const repository = (root: string) => {
+  mkdirSync(root, { recursive: true });
   const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args]);
   git('init', '-q');
   writeFileSync(join(root, 'f'), 'a\n');
   git('add', 'f');
   git('commit', '-q', '-m', 'base');
   writeFileSync(join(root, 'f'), 'b\n');
-  const marker = join(root, 'MARKER');
-  writeFileSync(join(root, 'fsmonitor.sh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 });
-  git('config', 'core.fsmonitor', join(root, 'fsmonitor.sh'));
-  rmSync(marker, { force: true });
-  return { root, marker };
+  return git;
 };
 
-describe('the git guard runs none of a target repository\'s own code', () => {
-  it('reads a repository inside the project with its fsmonitor, external diff and hooks switched off', () => {
+describe('the git guard runs none of a target repository\'s code, because it runs no git', () => {
+  it('a clean filter in a repository inside the project', () => {
     const project = mkdtempSync(join(tmpdir(), 'project-'));
-    const { root, marker } = hostile(project);
+    const root = join(project, 'repo');
+    const git = repository(root);
+    const marker = join(project, 'MARKER');
+    writeFileSync(join(root, '.gitattributes'), 'f filter=trip\n');
+    git('config', 'filter.trip.clean', tripwire(project, marker));
 
-    // THE control: the plain probe the guard used to run does execute the repository's config.
-    execFileSync('git', ['-C', root, 'diff', 'HEAD', '--stat']);
-    expect(existsSync(marker)).toBe(true);
+    git('diff', 'HEAD', '--stat');
+    expect(existsSync(marker), 'the control: reading this repository runs its filter').toBe(true);
     rmSync(marker);
 
-    const { blocked, stderr } = hook(`git -C ${root} checkout -- f`, process.cwd(), project);
-    expect(blocked).toBe(true);
-    expect(stderr).toContain('uncommitted edits');
+    expect(hook(`git -C ${root} checkout -- f`, project, { ...process.env, CLAUDE_PROJECT_DIR: project }).blocked).toBe(true);
     expect(existsSync(marker)).toBe(false);
   });
 
-  it('refuses a discard aimed at a repository outside the project, without reading it', () => {
-    const { root, marker } = hostile(tmpdir());
-    const { blocked, stderr } = hook(`cd ${root} && git checkout -- f`, process.cwd(), mkdtempSync(join(tmpdir(), 'project-')));
-    expect(blocked).toBe(true);
-    expect(stderr).toContain('outside this project');
+  it('a clean filter in a repository nested inside one of the project', () => {
+    const project = mkdtempSync(join(tmpdir(), 'project-'));
+    repository(project);
+    const nested = join(project, 'vendor', 'nested');
+    const git = repository(nested);
+    const marker = join(project, 'MARKER');
+    writeFileSync(join(nested, '.gitattributes'), 'f filter=trip\n');
+    git('config', 'filter.trip.clean', tripwire(project, marker));
+
+    git('diff', 'HEAD', '--stat');
+    expect(existsSync(marker), 'the control: reading this repository runs its filter').toBe(true);
+    rmSync(marker);
+
+    expect(hook('cd vendor/nested && git checkout -- f', project, { ...process.env, CLAUDE_PROJECT_DIR: project }).blocked).toBe(true);
     expect(existsSync(marker)).toBe(false);
   });
 
-  it('with no CLAUDE_PROJECT_DIR, refuses a discard without running git where the command points', () => {
-    const { root, marker } = hostile(tmpdir());
-    const { blocked, stderr } = hook('git checkout -- f', root, null);
-    expect(blocked).toBe(true);
-    expect(stderr).toContain('project root is unknown');
+  it('a core.worktree that points the repository at another directory', () => {
+    const project = mkdtempSync(join(tmpdir(), 'project-'));
+    const elsewhere = join(project, 'elsewhere');
+    mkdirSync(elsewhere);
+    const root = join(project, 'redirected');
+    const git = repository(root);
+    const marker = join(project, 'MARKER');
+    writeFileSync(join(elsewhere, 'f'), 'c\n');
+    writeFileSync(join(elsewhere, '.gitattributes'), 'f filter=trip\n');
+    git('config', 'filter.trip.clean', tripwire(project, marker));
+    git('config', 'core.worktree', elsewhere);
+
+    git('diff', 'HEAD', '--stat');
+    expect(existsSync(marker), 'the control: reading this repository runs the filter in the other directory').toBe(true);
+    rmSync(marker);
+
+    expect(hook(`git -C ${root} checkout -- f`, project, { ...process.env, CLAUDE_PROJECT_DIR: project }).blocked).toBe(true);
     expect(existsSync(marker)).toBe(false);
   });
 
-  it('with no CLAUDE_PROJECT_DIR, lets a command that discards nothing through', () => {
-    const { root } = hostile(tmpdir());
-    expect(hook('git status --short', root, null)).toEqual({ blocked: false, status: 0, stderr: '' });
+  it('and no git binary is started at all, whatever the command names', () => {
+    const bin = mkdtempSync(join(tmpdir(), 'bin-'));
+    const marker = join(bin, 'MARKER');
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\ntouch '${marker}'\n`);
+    chmodSync(join(bin, 'git'), 0o755);
+    const env = { ...process.env, PATH: bin };
+    for (const command of ['git checkout -- f', 'git reset --hard', 'git add -A', 'git status']) hook(command, process.cwd(), env);
+    expect(existsSync(marker)).toBe(false);
+    execFileSync(join(bin, 'git'));
+    expect(existsSync(marker), 'the control: this git leaves a marker when started').toBe(true);
   });
 });
