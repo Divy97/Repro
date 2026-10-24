@@ -17,6 +17,7 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import type pg from 'pg';
 import type { Db } from '../src/store.js';
 import type { Session } from '../src/auth.js';
@@ -394,8 +395,8 @@ afterAll(async () => {
 });
 
 describe('stored, listed by name, deleted, never read back', () => {
-  test('the whole life of a secret', async () => {
-    if (!client) return void expect(why).toBe('SKIP');
+  test('the whole life of a secret', async (context) => {
+    if (!client) return skip(context, why);
     await putRepoSecret(client, REPO, 'STRIPE_SECRET_KEY', CANARY, 'divy97');
     await putRepoSecret(client, REPO, 'DATABASE_URL', 'postgres://localhost/x', 'divy97');
     expect(await listRepoSecretNames(client, REPO)).toEqual(['DATABASE_URL', 'STRIPE_SECRET_KEY']);
@@ -422,8 +423,8 @@ describe('stored, listed by name, deleted, never read back', () => {
     expect(await listRepoSecretNames(client, REPO)).toEqual(['DATABASE_URL']);
   });
 
-  test('a model key is one per person, and what comes back is a provider', async () => {
-    if (!client) return void expect(why).toBe('SKIP');
+  test('a model key is one per person, and what comes back is a provider', async (context) => {
+    if (!client) return skip(context, why);
     expect(await hasModelKey(client, GITHUB_ID)).toBeNull();
     await putModelKey(client, GITHUB_ID, 'openrouter', CANARY);
     expect(await hasModelKey(client, GITHUB_ID)).toEqual({ provider: 'openrouter' });
@@ -434,8 +435,8 @@ describe('stored, listed by name, deleted, never read back', () => {
     expect(await deleteModelKey(client, GITHUB_ID)).toBe(false);
   });
 
-  test('a re-homed row fails to open rather than opening somewhere it should not', async () => {
-    if (!client) return void expect(why).toBe('SKIP');
+  test('a re-homed row fails to open rather than opening somewhere it should not', async (context) => {
+    if (!client) return skip(context, why);
     // The database half of the AAD control above: this is the write an attacker with
     // SQL access makes, and the read is what the worker would do next.
     await putRepoSecret(client, REPO, 'MOVED_KEY', CANARY, 'divy97');
@@ -458,8 +459,8 @@ describe('stored, listed by name, deleted, never read back', () => {
 });
 
 describe('THE test: a value stored through the surface never comes back out of it', () => {
-  test('every response the dashboard can produce, greppped for the value that was stored', async () => {
-    if (!client) return void expect(why).toBe('SKIP');
+  test('every response the dashboard can produce, greppped for the value that was stored', async (context) => {
+    if (!client) return skip(context, why);
     // Against a REAL database, because the fake client used above stores nothing: with no
     // value in play, no route test could leak one however it were written. That is how
     // three separate echoes — `{ stored, value }` on the PUT, `{ stored, provider, key }`
@@ -533,8 +534,8 @@ describe('a runner is handed what its run is entitled to, and nothing it names',
       raw: async () => Buffer.alloc(0),
     });
 
-  test('another runner cannot ask for this run, and this one cannot while injection is off', async () => {
-    if (!client) return void expect(why).toBe('SKIP');
+  test('another runner cannot ask for this run, and this one cannot while injection is off', async (context) => {
+    if (!client) return skip(context, why);
     const mine = await pairRunner(client, { installationId: 1, name: 'mine' });
     const theirs = await pairRunner(client, { installationId: 2, name: 'theirs' });
     madeRunners.push(mine.runner.id, theirs.runner.id);
