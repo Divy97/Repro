@@ -6,10 +6,10 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, createHmac, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const REPO = resolve(import.meta.dirname, '../../../..');
@@ -48,6 +48,23 @@ type State = {
 
 class Refusal extends Error {}
 
+const ENV_KEYS = new Set([
+  'DATABASE_URL', 'ENGINE_TEST_QUEUE', 'PLANE_SECRETS_KEY', 'GITHUB_APP_ID', 'GITHUB_PRIVATE_KEY_PATH', 'GITHUB_WEBHOOK_SECRET',
+  'ENGINE_PROVIDER', 'OPENROUTER_API_KEY', 'ENGINE_BLOB_ROOT', 'WEBHOOK_PORT', 'EVENTS_PORT',
+]);
+const EVIDENCE_ROOT = join(REPO, '.verify-evidence');
+
+/**
+ * On Linux the default lives in the shared /tmp, so another local user could plant state.json
+ * first and choose the environment (NODE_OPTIONS) that `cli` and `up` spawn node with.
+ */
+const assertPrivateStateDir = (): void => {
+  const stat = lstatSync(STATE_DIR);
+  if (!stat.isDirectory()) throw new Refusal(`${STATE_DIR} is not a real directory (a symlink?); refusing to use it`);
+  if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) throw new Refusal(`${STATE_DIR} is owned by uid ${stat.uid}, not you; refusing to use it`);
+  if (stat.mode & 0o077) throw new Refusal(`${STATE_DIR} is readable or writable by other users (mode ${(stat.mode & 0o777).toString(8)}); refusing to use it`);
+};
+
 const emit = (body: Record<string, unknown>): never => {
   process.stdout.write(`${JSON.stringify(body, null, 2)}\n`);
   process.exit(body.ok === false ? 1 : 0);
@@ -65,7 +82,12 @@ const run = (command: string, args: string[], options: { env?: NodeJS.ProcessEnv
 
 const readState = (): State => {
   if (!existsSync(STATE_FILE)) throw new Refusal(`no instance is up for ${REPO} (no ${STATE_FILE}); run \`repro-verify up\``);
-  return JSON.parse(readFileSync(STATE_FILE, 'utf8')) as State;
+  assertPrivateStateDir();
+  const state = JSON.parse(readFileSync(STATE_FILE, 'utf8')) as State;
+  const unknown = Object.keys(state.env ?? {}).filter((key) => !ENV_KEYS.has(key) || typeof state.env[key] !== 'string');
+  if (unknown.length) throw new Refusal(`${STATE_FILE} carries env keys this helper never writes (${unknown.join(', ')}); refusing to use it`);
+  if (!state.evidence?.startsWith(EVIDENCE_ROOT + sep)) throw new Refusal(`${STATE_FILE} points evidence outside ${EVIDENCE_ROOT}; refusing to use it`);
+  return state;
 };
 
 const alive = (pid: number): boolean => {
@@ -189,7 +211,7 @@ async function teardown(state: Partial<State> | null): Promise<string[]> {
     mkdirSync(state.evidence, { recursive: true });
     writeFileSync(join(state.evidence, 'serve.log'), readFileSync(LOG_FILE));
   }
-  if (existsSync(MARKER)) {
+  if (existsSync(MARKER) && lstatSync(STATE_DIR).isDirectory()) {
     rmSync(STATE_DIR, { recursive: true, force: true });
     did.push(`removed ${STATE_DIR}`);
   } else if (existsSync(STATE_DIR)) {
@@ -225,9 +247,13 @@ async function up(): Promise<never> {
   }
 
   const runId = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  const evidence = join(REPO, '.verify-evidence', runId);
+  const evidence = join(EVIDENCE_ROOT, runId);
   const ports = { postgres: await freePort(), webhook: await freePort(), events: await freePort() };
-  mkdirSync(join(STATE_DIR, 'blobs'), { recursive: true });
+  mkdirSync(dirname(STATE_DIR), { recursive: true });
+  // Not recursive: a directory someone created since the check above is EEXIST, not adopted.
+  mkdirSync(STATE_DIR, { mode: 0o700 });
+  assertPrivateStateDir();
+  mkdirSync(join(STATE_DIR, 'blobs'));
   writeFileSync(MARKER, `${REPO}\n`);
   mkdirSync(evidence, { recursive: true });
 
