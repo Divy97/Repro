@@ -4,8 +4,8 @@
 // Reads the hook's JSON on stdin. Exit 2 blocks the command and shows stderr to the agent.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 
 /** Drop heredoc bodies, so a commit message that mentions a command is not that command. */
 const withoutHeredocs = (command) => {
@@ -119,10 +119,37 @@ export function discards(command, cwd) {
   return found.filter((one) => one.paths.length > 0);
 }
 
+// This hook runs before the human approves the command, on a directory the command names.
+// Git executes a repository's own config (an fsmonitor, an external diff, a textconv driver)
+// while it reads that repository, so every call here switches those off.
+const SAFE = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'diff.external=', '--no-pager'];
+const git = (dir, ...args) =>
+  execFileSync('git', [...SAFE, '-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+
+const real = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+/** The repository a directory belongs to, or null when it belongs to none. */
+export function toplevel(dir) {
+  try {
+    return real(git(dir, 'rev-parse', '--show-toplevel'));
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a repository sits inside the project this session was started in. */
+export const inside = (repository, root) => repository === root || repository.startsWith(`${root}${sep}`);
+
 /** `git diff --stat` of the uncommitted edits a discard would destroy, or '' when there are none. */
 export function uncommitted({ dir, paths }) {
   try {
-    return execFileSync('git', ['-C', dir, 'diff', 'HEAD', '--stat', '--', ...paths], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return git(dir, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--stat', '--', ...paths);
   } catch {
     return '';
   }
@@ -148,7 +175,28 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
   }
 
-  for (const discard of discards(command, input.cwd ?? process.cwd())) {
+  const cwd = input.cwd ?? process.cwd();
+  // Only Claude Code's own variable. The hook input's cwd moves wherever a command went, so a
+  // root taken from it is a root the command chose.
+  const root = process.env.CLAUDE_PROJECT_DIR ? real(process.env.CLAUDE_PROJECT_DIR) : null;
+  for (const discard of discards(command, cwd)) {
+    if (root === null) {
+      refuse(
+        `Refused: \`${discard.command}\` can discard uncommitted work, and this hook cannot tell which ` +
+          'repositories it may inspect: CLAUDE_PROJECT_DIR is not set, so the project root is unknown. ' +
+          'Run it from a Claude Code session started in the project, or ask the human to run it.',
+      );
+    }
+    const repository = toplevel(discard.dir);
+    if (repository === null) continue;
+    if (!inside(repository, root)) {
+      refuse(
+        `Refused: \`${discard.command}\` targets ${repository}, which is outside this project (${root}). ` +
+          'This hook checks for uncommitted work before a discard, and it will not read a repository it ' +
+          'does not trust: git runs a repository\'s own config while it reads it. Run the command from ' +
+          'inside the project, or ask the human to run it.',
+      );
+    }
     const stat = uncommitted(discard);
     if (!stat) continue;
     refuse(
