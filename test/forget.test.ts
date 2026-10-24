@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import { get, put } from '../src/blobs.js';
 import type { ArtifactRef, RunEvent } from '../src/events.js';
 import { forgetRun, tombstoneFor } from '../src/forget.js';
@@ -26,7 +27,7 @@ let root = '';
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'engine-forget-blobs-'));
   if (!process.env.DATABASE_URL) {
-    why = 'DATABASE_URL is not set (copy .env.example to .env and `docker compose up -d`)';
+    why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
     return;
   }
   try {
@@ -47,11 +48,6 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const withDb = (): boolean => {
-  if (client) return false;
-  expect.fail(`forgetting was NOT verified: ${why}`);
-};
-
 /** A run of two events, the second citing whatever refs are given. */
 const runCiting = async (refs: ArtifactRef[]): Promise<string> => {
   const runId = randomUUID();
@@ -64,8 +60,8 @@ const runCiting = async (refs: ArtifactRef[]): Promise<string> => {
 };
 
 describe('forgetting destroys bytes and keeps history', () => {
-  test('the artifacts go, and every event stays exactly as it was', async () => {
-    if (withDb()) return;
+  test('the artifacts go, and every event stays exactly as it was', async (context) => {
+    if (!client) return skip(context, why);
     const ref = await put(root, `only this run has these bytes ${randomUUID()}`);
     const runId = await runCiting([ref]);
 
@@ -84,8 +80,8 @@ describe('forgetting destroys bytes and keeps history', () => {
     expect(JSON.stringify(after.rows)).toContain(ref);
   });
 
-  test('bytes another run also cites are kept, because they are the same bytes', async () => {
-    if (withDb()) return;
+  test('bytes another run also cites are kept, because they are the same bytes', async (context) => {
+    if (!client) return skip(context, why);
     // Content addressing means two runs with identical output share one file. Deleting
     // everything the forgotten run cites would silently break a run nobody asked about,
     // and it would surface much later as an evidence page whose hashes do not resolve —
@@ -102,8 +98,8 @@ describe('forgetting destroys bytes and keeps history', () => {
     expect((await get(root, shared)).toString()).toContain('two runs produced this');
   });
 
-  test('a blob shared only with an already-forgotten run does go', async () => {
-    if (withDb()) return;
+  test('a blob shared only with an already-forgotten run does go', async (context) => {
+    if (!client) return skip(context, why);
     // The other half of the same rule: "somebody still needs these" must not be
     // satisfied by a run that has itself been deleted, or the last citation would
     // preserve bytes nobody can see forever.
@@ -118,8 +114,8 @@ describe('forgetting destroys bytes and keeps history', () => {
     await expect(get(root, shared)).rejects.toThrow();
   });
 
-  test('forgetting twice does not rewrite who asked, or when', async () => {
-    if (withDb()) return;
+  test('forgetting twice does not rewrite who asked, or when', async (context) => {
+    if (!client) return skip(context, why);
     const ref = await put(root, `once ${randomUUID()}`);
     const runId = await runCiting([ref]);
 
@@ -130,8 +126,8 @@ describe('forgetting destroys bytes and keeps history', () => {
     expect(again.requestedBy).toBe('divy97');
   });
 
-  test('a run nobody forgot has no tombstone, so the page renders normally', async () => {
-    if (withDb()) return;
+  test('a run nobody forgot has no tombstone, so the page renders normally', async (context) => {
+    if (!client) return skip(context, why);
     expect(await tombstoneFor(client!, await runCiting([]))).toBeNull();
   });
 });

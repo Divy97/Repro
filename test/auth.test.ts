@@ -10,6 +10,7 @@
 // `fetch` and run everywhere.
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import {
   authorizeUrl,
   clearedCookie,
@@ -32,7 +33,7 @@ const made: string[] = [];
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
-    why = 'DATABASE_URL is not set (copy .env.example to .env and `docker compose up -d`)';
+    why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
     return;
   }
   try {
@@ -48,11 +49,6 @@ afterAll(async () => {
   if (client) await client.query('delete from sessions where id = any($1)', [made]).catch(() => {});
   await client?.end();
 });
-
-const withDb = (): boolean => {
-  if (client) return false;
-  expect.fail(`sessions were NOT verified: ${why}`);
-};
 
 /** A GitHub that answers exactly what a test wants, and records what it was asked. */
 const fakeGitHub = (answers: Record<string, { status?: number; body: unknown }>) => {
@@ -140,8 +136,8 @@ describe('logging in is GitHub s job, and coming back is ours', () => {
 });
 
 describe('a session is a row, and it expires', () => {
-  test('it round-trips, and logging out ends it', async () => {
-    if (withDb()) return;
+  test('it round-trips, and logging out ends it', async (context) => {
+    if (!client) return skip(context, why);
     const id = await createSession(client!, {
       githubId: 4242,
       login: 'divy97',
@@ -155,14 +151,14 @@ describe('a session is a row, and it expires', () => {
     expect(await readSession(client!, id)).toBeNull();
   });
 
-  test('an invented cookie is nobody', async () => {
-    if (withDb()) return;
+  test('an invented cookie is nobody', async (context) => {
+    if (!client) return skip(context, why);
     expect(await readSession(client!, 'not-a-session')).toBeNull();
     expect(await readSession(client!, undefined)).toBeNull();
   });
 
-  test('an aged session is nobody, without a sweeper having to have run', async () => {
-    if (withDb()) return;
+  test('an aged session is nobody, without a sweeper having to have run', async (context) => {
+    if (!client) return skip(context, why);
     // Expiry enforced in the read, so a process that never runs a cleanup job cannot
     // leave a year-old cookie working.
     const id = await createSession(client!, { githubId: 1, login: 'old', avatarUrl: '', token: 't' });
