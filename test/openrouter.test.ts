@@ -594,7 +594,7 @@ describe('the suite has no model configuration of its own', () => {
     // that reads the variable passes either way once an earlier `afterEach` has deleted
     // it — which is exactly how this hole stayed open.
     //
-    // The hole: `vitest.config.ts` loads `.env` for `DATABASE_URL`, so a real
+    // The hole: `vitest.config.ts` loaded `.env` for `DATABASE_URL`, so a real
     // `ENGINE_PROVIDER=openrouter` put there for an actual run sent every Anthropic-path
     // test through the OpenRouter branch, where the scripted Messages API fixture is the
     // wrong wire format. Six tests went red and nothing named the file responsible.
