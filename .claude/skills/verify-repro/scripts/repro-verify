@@ -1,0 +1,14 @@
+#!/bin/sh
+# Entry point for the verify-repro skill. Runs repro-verify.mts under the repository's own tsx.
+set -eu
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../../../.." && pwd)
+loader="$repo/node_modules/tsx/dist/loader.mjs"
+
+if [ ! -e "$loader" ]; then
+  echo "repro-verify: node_modules is missing in $repo; running npm ci" >&2
+  (cd "$repo" && npm ci --no-audit --no-fund >&2)
+fi
+
+exec node --import "file://$loader" "$here/repro-verify.mts" "$@"
