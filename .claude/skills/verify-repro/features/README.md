@@ -23,7 +23,7 @@ Pass absolute paths to `$RV cli`: it runs with its cwd in the state directory, s
 - Deliveries are real GitHub payload shapes, written to `$E/<feature>-<what>.json` first so the bytes sent are part of the evidence, then sent with `$RV webhook <x-github-event> <file>`.
 - Browser actions go through `$RV browse`; terminal actions through `$RV cli`; observations of stored state through `$RV sql` (read-only).
 - Wait for data, not for headings. Put a positive `wait` before every `absent`. Patterns are case-insensitive because the stylesheet uppercases headings, tabs and buttons.
-- Use `fill` for inputs, never a `.value` assignment: React ignores a direct assignment. `fill` is `src/browser.ts`'s `Browser.type`, the method behind the engine agent's `browser_type` tool.
+- Type into inputs with `fill`. It is `src/browser.ts`'s `Browser.type`, the method behind the engine agent's `browser_type` tool.
 
 ## Proof and skip reporting
 

@@ -160,7 +160,7 @@ export class Browser {
    * Set a field's value and fire the events a framework listens for.
    *
    * Through the prototype's `value` setter, not `el.value =`. React installs its own setter on
-   * a controlled field's instance to track the last value it saw; an assignment through it
+   * each input and textarea it renders, to track the last value it saw; an assignment through it
    * updates that record, the input event then looks like no change, and `onChange` never fires.
    */
   async type(selector: string, text: string): Promise<string> {
