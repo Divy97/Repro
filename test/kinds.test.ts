@@ -223,7 +223,7 @@ describe('a worker does the thing its job says', () => {
  * Skip, loudly, rather than fail — the house rule from `test/store.test.ts`.
  *
  * AND A SECOND GATE, which is the one worth reading. A test that writes to `jobs` needs a
- * queue nobody else is draining, and `vitest.config.ts` loads `.env` — which on this
+ * queue nobody else is draining, and a shared database — which is what `.env` on this
  * repository points at the PRODUCTION database, where a live global worker long-polls
  * `/runner/jobs` every 500ms and takes any installation's job of any kind.
  *
@@ -241,10 +241,10 @@ describe('a worker does the thing its job says', () => {
 let client: ReturnType<typeof connect> | null = null;
 let why = '';
 try {
-  if (!process.env.DATABASE_URL) why = 'DATABASE_URL is not set (copy .env.example to .env)';
+  if (!process.env.DATABASE_URL) why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
   else if (process.env.ENGINE_TEST_QUEUE !== '1') {
     why =
-      'this test writes to `jobs`, and a live worker drains the queue that `.env` points at — ' +
+      'this test writes to `jobs`, and a live worker drains the queue of a shared database — ' +
       'set ENGINE_TEST_QUEUE=1 against a database of your own (`docker compose up -d`)';
   } else client = connect();
 } catch (error) {

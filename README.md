@@ -94,10 +94,10 @@ cp .env.example .env              # set POSTGRES_PASSWORD and DATABASE_URL
 docker compose up -d postgres
 npm run db:apply                  # apply the event-store schema
 npm run images                    # build the sandbox and agent images
-npx vitest run                    # no model key needed: agents are scripted in tests
+DATABASE_URL=postgres://postgres:<password>@127.0.0.1:5432/events npx vitest run
 ```
 
-Use a local database for the suite, not a shared one. The queue tests only run with `ENGINE_TEST_QUEUE=1`, so they cannot race a live worker. `.env.example` documents every other setting: the model provider, the GitHub App, the executor.
+The suite never reads `.env`, and it refuses a `DATABASE_URL` that is not on this machine. No model key is needed: agents are scripted in tests. The queue tests only run with `ENGINE_TEST_QUEUE=1`, so they cannot race a live worker. `.env.example` documents every other setting: the model provider, the GitHub App, the executor.
 
 ## Repository layout
 

@@ -364,7 +364,7 @@ beforeAll(async () => {
   // alternative is a suite that skips its only coverage of the storage rules.
   process.env.PLANE_SECRETS_KEY ??= KEY.toString('base64');
   if (!process.env.DATABASE_URL) {
-    why = 'DATABASE_URL is not set (copy .env.example to .env and `docker compose up -d`)';
+    why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
     return;
   }
   try {

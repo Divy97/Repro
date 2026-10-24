@@ -39,8 +39,8 @@ beforeAll(async () => {
   // ── WHY THIS FILE FAILS 10–15 TESTS AGAINST A SHARED DATABASE ───────────────────
   //
   // Not contention with itself, which is what it looked like for weeks. `vitest.config.ts`
-  // loads `.env`, this repository's `.env` points at the production database, and a live
-  // global worker there long-polls `/runner/jobs` every 500ms taking any installation's job
+  // loaded `.env` until it was made to refuse a remote database. This repository's `.env`
+  // points at the production database, and a live global worker there long-polls `/runner/jobs` every 500ms taking any installation's job
   // of any kind. It claims the jobs this file queues — verified in the worker's own log,
   // which shows it taking `o/r`, the repository below — so `claimJob` here returns 204 and
   // the assertions about who holds what fail.
@@ -54,7 +54,7 @@ beforeAll(async () => {
   // the fix is a database of your own: `docker compose up -d`, and point `DATABASE_URL` at
   // it. Then this file is deterministic.
   if (!process.env.DATABASE_URL) {
-    why = 'DATABASE_URL is not set (copy .env.example to .env and `docker compose up -d`)';
+    why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
     return;
   }
   try {
@@ -237,7 +237,7 @@ describe('work goes to the machine it was dispatched to', () => {
     //
     // The first version of this test claimed every unclaimed job first, to get a known
     // starting point. That is a global runner doing exactly what it is for — and
-    // `vitest.config.ts` calls `process.loadEnvFile('.env')`, whose `DATABASE_URL` in the
+    // `vitest.config.ts` then called `process.loadEnvFile('.env')`, whose `DATABASE_URL` in the
     // main checkout is the PRODUCTION Neon pooler. `npm test` would have stamped
     // `runner_id` on every real queued run, making each permanently undeliverable and
     // blocking its issue for two hours, then failed to clean up on the foreign key and
