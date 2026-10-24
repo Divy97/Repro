@@ -66,7 +66,7 @@ Ready output (real, from the proof run):
 
 The instance starts empty: no installations, no runs, no recipes. Each feature file seeds what its journey needs through user paths (signed deliveries) or the operator CLI.
 
-The state lives in `$TMPDIR/repro-verify-<hash>/`. It holds `state.json`, `serve.log`, the throwaway PEM, the blob root, browser profiles and a `.repro-verify` marker. To override the location, set `REPRO_VERIFY_STATE` to a path that does **not** exist yet. `up` refuses an existing directory, and `down` deletes only a directory carrying the marker. There is one instance per checkout, so `up` refuses while one is recorded.
+The state lives in `$TMPDIR/repro-verify-<hash>/`. It holds `state.json`, `serve.log`, the throwaway PEM, the blob root, browser profiles and a `.repro-verify` marker. To override the location, set `REPRO_VERIFY_STATE` to a path that does **not** exist yet. `up` creates it with mode `0700` and refuses an existing directory. Every command refuses a state directory that is a symlink, owned by another user, or open to other users, and a `state.json` carrying env keys or an evidence path the helper never writes. `down` deletes only a directory carrying the marker. There is one instance per checkout, so `up` refuses while one is recorded.
 
 ## Doctor
 
