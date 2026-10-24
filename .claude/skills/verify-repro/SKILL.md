@@ -46,14 +46,15 @@ $RV up
 `up`, from a fresh clone:
 
 1. Runs `npm ci` if `node_modules/tsx` is missing (the shim does this, for every subcommand).
-2. Runs `npm run web:build` if `web/out/index.html` is missing or older than anything in `web/app`, `web/components`, `web/lib`, `web/next.config.mjs` or `web/package-lock.json`.
-3. Picks three free ports and starts a dedicated container, `repro-verify-pg-<hash of checkout path>`, from `postgres:17`, published on `127.0.0.1` only and labelled with its state directory.
-4. Waits until Postgres answers over TCP. The image's init-time server is socket-only, so this cannot pass mid-init.
-5. Applies `db/schema.sql` with `src/cli.ts schema --yes`.
-6. Starts `node --import tsx src/serve.ts` detached, logging to `<state>/serve.log`.
-7. Returns only when `GET /api/me` answers `200` with `"mode": "local"`.
+2. Creates the state directory (mode `0700`), which is also the lock: a second `up` stops here instead of building beside the first.
+3. Runs `npm run web:build` if `web/out/index.html` is missing or older than anything in `web/app`, `web/components`, `web/lib`, `web/next.config.mjs`, `web/package.json`, `web/package-lock.json` or `web/tsconfig.json`.
+4. Picks three free ports and starts a dedicated container, `repro-verify-pg-<hash of checkout path>`, from `postgres:17`, published on `127.0.0.1` only and labelled with its state directory.
+5. Waits until Postgres answers over TCP. The image's init-time server is socket-only, so this cannot pass mid-init.
+6. Applies `db/schema.sql` with `src/cli.ts schema --yes`.
+7. Starts `node --import tsx src/serve.ts` detached, with its cwd in the state directory, logging to `<state>/serve.log`.
+8. Returns only when `GET /api/me` answers `200` with `"mode": "local"`.
 
-On any failure it tears down what it started and says what failed.
+On any failure after step 2 it tears down what it started, removes the state directory, and says what failed.
 
 Ready output (real, from the proof run):
 
@@ -66,7 +67,7 @@ Ready output (real, from the proof run):
 
 The instance starts empty: no installations, no runs, no recipes. Each feature file seeds what its journey needs through user paths (signed deliveries) or the operator CLI.
 
-The state lives in `$TMPDIR/repro-verify-<hash>/`. It holds `state.json`, `serve.log`, the throwaway PEM, the blob root, browser profiles and a `.repro-verify` marker. To override the location, set `REPRO_VERIFY_STATE` to a path that does **not** exist yet. `up` creates it with mode `0700` and refuses an existing directory. Every command refuses a state directory that is a symlink, owned by another user, or open to other users, and a `state.json` carrying env keys or an evidence path the helper never writes. `down` deletes only a directory carrying the marker. There is one instance per checkout, so `up` refuses while one is recorded.
+The state always lives in `$TMPDIR/repro-verify-<hash>/` (on Linux, `/tmp`, which other users share); there is no override. It holds `state.json`, `serve.log`, the throwaway PEM, the blob root, browser profiles and a `.repro-verify` marker. `up` creates it with mode `0700`, without `-p`, and refuses one that already exists. Every command, `down` included, refuses a state directory that is a symlink, owned by another user, or open to other users. Behind a private directory only you can write `state.json`, so its contents are trusted as written. `down` deletes only a directory carrying the marker. There is one instance per checkout, so `up` refuses while one is recorded.
 
 ## Doctor
 
@@ -78,9 +79,9 @@ This is read-only. Run it right after `up`, before driving anything, and again w
 
 | check | what it proves |
 | --- | --- |
-| `process` | the recorded pid is alive and is `src/serve.ts` of this checkout |
+| `process` | the recorded pid is alive, its command line is `src/serve.ts` of this checkout, and its cwd (`lsof`) is the state directory |
 | `events port`, `webhook port` | `lsof` says that pid holds both ports |
-| `database target` | `DATABASE_URL` is `127.0.0.1:<our port>`, never a remote host |
+| `database target` | the **running process's** `DATABASE_URL` (`/proc/<pid>/environ` on Linux, `ps -E` on macOS) is `127.0.0.1:<our postgres port>`, never a remote host; fails with "cannot read the process environment" when it cannot be read |
 | `container` | our container is running and carries our state-dir label |
 | `schema` | the six core tables exist |
 | `api` | `GET /api/me` is `200`, `mode: local`, `accounts: false` |
@@ -97,7 +98,7 @@ This is read-only. Run it right after `up`, before driving anything, and again w
 | `$RV browse <steps…>` | a real headless Chrome on the dashboard, through the repo's own CDP client `src/browser.ts` |
 | `$RV webhook <event> <file\|-> [--unsigned]` | sign a delivery with the instance's secret and POST it to the receiver; prints `status` and `body` |
 | `$RV cli <args…>` | `src/cli.ts` against the instance's database |
-| `$RV sql "<sql>"` | `psql -At` in our container, **read-only** (`default_transaction_read_only=on`); `--write` lifts it, for fixture cleanup only |
+| `$RV sql "<sql>"` | `psql -At` in our container with `default_transaction_read_only=on`. That is a session default a statement can override (`begin read write`), so it guards against accidents, not against intent. `--write` drops it, for fixture cleanup only |
 | `$RV logs [n]` | last n lines of the service log (default 40) |
 | `$RV evidence` | the evidence directory, for `tee` |
 
@@ -107,11 +108,11 @@ This is read-only. Run it right after `up`, before driving anything, and again w
 | --- | --- |
 | `go PATH` | navigate to `PATH` on the dashboard and wait for load |
 | `wait RE` | poll the page's `innerText` until the case-insensitive regex matches (15s) |
-| `absent RE` | poll until it does NOT match (15s) |
+| `absent RE` | poll until it does NOT match (15s). A page that cannot be read never counts as absent |
 | `click CSS` | `element.click()` on the first match |
 | `fill CSS TEXT` | set an input or textarea value so React's `onChange` fires |
 | `shot NAME` | viewport PNG to `<evidence>/NAME.png` (window 1280x1000, `REPRO_VERIFY_WINDOW=w,h` to change) |
-| `text NAME` | page `innerText` to `<evidence>/NAME.txt` |
+| `text NAME` | page `innerText` to `<evidence>/NAME.txt`; fails if the page cannot be read (an SVG or other non-HTML document has no `body`) |
 | `console NAME` | console, browser log and uncaught exceptions to `<evidence>/NAME.console.txt` |
 
 Example (real):
@@ -133,6 +134,8 @@ Rules that keep a drive honest:
 
 Evidence goes to `.verify-evidence/<run-id>/` in the checkout (gitignored). `up` creates it and prints it; `$RV evidence` prints it again. `down` copies `serve.log` into it and never deletes it.
 
+A subagent working in an isolated worktree (`isolation: "worktree"`) must copy its evidence directory somewhere outside the worktree before it returns, for example `cp -R "$E" "${TMPDIR:-/tmp}/"`, and report that path. The worktree, and the evidence inside it, may be cleaned up with the subagent.
+
 Proof standards:
 
 - Drive the real user path: a signed delivery for anything GitHub would send, the dashboard for anything a person clicks. `$RV cli seed` is an operator path and is acceptable only for preconditions a feature file names (a finished run cannot be produced locally without a model).
@@ -150,17 +153,17 @@ $RV down
 
 `down` does four things, each guarded:
 
-- Stops the service pid only if its command line is this checkout's `src/serve.ts` (SIGTERM, then SIGKILL after 10s).
+- Stops the service pid only if its command line is this checkout's `src/serve.ts` and its cwd is this state directory (SIGTERM, then SIGKILL after 10s).
 - Kills any Chrome left by an interrupted `browse`, matched by this instance's profile path. It never matches by name.
-- Removes the container only if its label matches this state directory.
-- Deletes the state directory only if it carries the marker.
+- Removes the container only if its label matches this state directory, and checks that `docker rm` succeeded.
+- Deletes the state directory only if it carries the marker, and only once the service is stopped and the container is confirmed gone.
 
-It keeps the evidence. It prints the evidence path and the files kept. Run it after every failed iteration as well. It is safe with nothing running. Never kill by process name.
+If anything it owns survives (the service would not die, `docker rm` failed, or Docker could not be asked at all), `down` prints `"ok": false` with a `left` list and keeps the state directory, so a later `down` can finish the job. It keeps the evidence. It prints the evidence path and the files kept. Run it after every failed iteration as well. It is safe with nothing running. Never kill by process name.
 
 ## Isolation
 
 - One instance per checkout. Two checkouts (or worktrees) can run side by side: ports are free-picked and the container and state names are keyed by checkout path.
-- `browse` cannot run twice at once on one machine. `src/browser.ts` hardcodes debug port 9222, so `browse` refuses while 9222 is taken (for example while `test/dashboard.browser.test.ts` runs). Do not kill whatever holds it.
+- `browse` cannot run twice at once on one machine. `src/browser.ts` hardcodes debug port 9222 and attaches to whatever answers there, so `browse` refuses while 9222 is taken (for example while `test/dashboard.browser.test.ts` runs), and when two start together, the one whose Chrome does not own 9222 fails before its first step. Run browses one after another. Do not kill whatever holds 9222; if `browse` says this instance's own Chrome holds it and no browse is running, `$RV down` clears it.
 - Never point `$RV` at the developer's `docker compose` Postgres. It shares a named volume with their dev data, and its password lives in `.env`.
 
 ## Feature map

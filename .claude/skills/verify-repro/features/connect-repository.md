@@ -13,7 +13,7 @@ When someone installs the GitHub App on a repository, or adds one to an existing
 
 ## How to get to it (user POV)
 
-- Install the App from the "Install on GitHub" button on an empty `/repos` (it links to GitHub, which then sends the delivery).
+- Install the App from the "Install on GitHub" button on an empty `/repos`. On a deployment with `GITHUB_APP_SLUG` set it links to `https://github.com/apps/<slug>/installations/new`, and GitHub then sends the delivery. **On this local instance it does not:** `up` sets no `GITHUB_APP_SLUG`, so `src/routes.ts` points the button at `https://github.com/settings/apps/new` (register a new App), not an install flow. Do not click it as part of a proof; the signed delivery below is the install.
 - Add or remove repositories in the installation's settings on GitHub, which sends `installation_repositories`.
 - Uninstall the App on GitHub, which sends `installation` `deleted`.
 
