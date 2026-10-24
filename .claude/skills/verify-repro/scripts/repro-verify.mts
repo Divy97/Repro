@@ -130,9 +130,9 @@ const isOurServe = (pid: number): boolean => {
   return cwd !== null && cwd === realStateDir();
 };
 
-/** Who listens on a TCP port, by pid; null when lsof is missing. */
-const listeners = (port: number): string[] | null => {
-  const lsof = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']);
+/** Who listens on a TCP port (optionally on one address), by pid; null when lsof is missing. */
+const listeners = (port: number, host = ''): string[] | null => {
+  const lsof = run('lsof', ['-nP', `-iTCP${host ? `@${host}` : ''}:${port}`, '-sTCP:LISTEN', '-t']);
   return lsof.status === null ? null : lsof.stdout.trim().split('\n').filter(Boolean);
 };
 
@@ -618,16 +618,18 @@ async function browse(argv: string[]): Promise<never> {
   };
 
   /**
-   * src/browser.ts attaches to whatever answers on 9222. Two `browse` runs that both found it free
-   * would otherwise both drive the first one's Chrome, and the second would record the first's page.
+   * src/browser.ts attaches to whatever answers on 127.0.0.1:9222. Two `browse` runs that both found
+   * it free would otherwise both drive the first one's Chrome, and the second would record the
+   * first's page. Only 127.0.0.1 is checked: a Chrome that loses that address falls back to
+   * [::1]:9222, which browser.ts never connects to.
    */
   const assertOwnBrowser = (): void => {
-    const pids = listeners(DEBUG_PORT);
+    const pids = listeners(DEBUG_PORT, '127.0.0.1');
     if (pids === null) throw new Refusal(`cannot tell who holds 127.0.0.1:${DEBUG_PORT} (install lsof); refusing to drive a browser that may not be this one`);
     const flag = `--user-data-dir=${profile}`;
     const foreign = pids.filter((pid) => !commandOf(Number(pid)).includes(flag));
     if (pids.length === 0 || foreign.length) {
-      throw new Refusal(`127.0.0.1:${DEBUG_PORT} is held by pid ${pids.join(', ') || 'nobody'}, not by the Chrome this browse started (${flag}); another browse or browser test got there first; run this again when it has finished`);
+      throw new Refusal(`127.0.0.1:${DEBUG_PORT} is held by pid ${pids.join(', ') || 'nobody'}, not (only) by the Chrome this browse started (${flag}); another browse or browser test got there first; run this again when it has finished`);
     }
   };
 

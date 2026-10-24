@@ -163,7 +163,7 @@ If anything it owns survives (the service would not die, `docker rm` failed, or 
 ## Isolation
 
 - One instance per checkout. Two checkouts (or worktrees) can run side by side: ports are free-picked and the container and state names are keyed by checkout path.
-- `browse` cannot run twice at once on one machine. `src/browser.ts` hardcodes debug port 9222 and attaches to whatever answers there, so `browse` refuses while 9222 is taken (for example while `test/dashboard.browser.test.ts` runs), and when two start together, the one whose Chrome does not own 9222 fails before its first step. Run browses one after another. Do not kill whatever holds 9222; if `browse` says this instance's own Chrome holds it and no browse is running, `$RV down` clears it.
+- `browse` cannot run twice at once on one machine. `src/browser.ts` hardcodes debug port 9222 and attaches to whatever answers there, so `browse` refuses while 9222 is taken (for example while `test/dashboard.browser.test.ts` runs), and when two start together, the one whose Chrome does not hold `127.0.0.1:9222` fails before its first step (the loser's Chrome falls back to `[::1]:9222`, which is not checked because `src/browser.ts` never connects there). Run browses one after another. Do not kill whatever holds 9222; if `browse` says this instance's own Chrome holds it and no browse is running, `$RV down` clears it.
 - Never point `$RV` at the developer's `docker compose` Postgres. It shares a named volume with their dev data, and its password lives in `.env`.
 
 ## Feature map
