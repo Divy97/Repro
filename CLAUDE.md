@@ -2,6 +2,10 @@
 
 This repository is built with [pstack](https://github.com/cursor/plugins/tree/main/pstack). This file holds only what pstack can't know about Repro. The rules for how to work live in pstack itself.
 
+## Install pstack yourself
+
+Run `/plugin marketplace add cursor/plugins`, then `/plugin install pstack@cursor-plugins`. This repo was set up against pstack 0.15.32 (`cursor/plugins` commit `9580c23`). The repo does not enable the plugin for you: the marketplace cannot be pinned to a commit, so a committed `enabledPlugins` would trust whatever `cursor/plugins` main holds on the day of the clone. Keep auto-update off and read the upstream diff before you update.
+
 ## Start every non-trivial task with `/pstack:poteto-mode`
 
 - `poteto-mode` matches the task to a playbook, copies its steps into the todo list, and runs the other pstack skills as the steps need them. A small, obvious edit does not need it.
