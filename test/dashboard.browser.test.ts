@@ -629,6 +629,17 @@ describe.sequential('the dashboard, driven in a real browser', () => {
     expect(panel).not.toMatch(/are single commands, each optional/i);
   });
 
+  test('browser.type reaches a React-controlled field, so the page acts on what was typed', async () => {
+    if (skipped('typing into a controlled field')) return;
+    await visit(`/repos/${UNONBOARDED}`, /check these commands/i);
+    await browser!.type('#recipe', 'this is not json');
+    // The JSON editor opens itself only when React's copy of the text stops parsing, so its
+    // hint showing is React having received what was typed, not the DOM holding it.
+    await settle(/are single commands, each optional/i, 'the editor after typing');
+    await browser!.click('.calls button.primary');
+    await settle(/that is not valid json/i, 'approving what was typed');
+  });
+
   test('the run register renders, and links to the run', async () => {
     // The one screen with a link to it on every page in the product, and the one the rest
     // of this file never visited.
