@@ -18,7 +18,7 @@
   // the first person to find out was whoever ran one during an incident. Adding it found
   // two real errors immediately, both passing the `Intake` union where the issue half was
   // required, plus a syntax error in the file being written when this line was added.
-  "include": ["src", "test", "scripts"],
+  "include": ["src", "test", "scripts", ".claude/skills/verify-repro/scripts"],
   // `web/` is a SEPARATE PROGRAM with a separate tsconfig, and it has to be: its modules
   // are resolved by a bundler, so they import without a file extension, which `NodeNext`
   // above refuses by design. Typechecking them here would report an error in every import
