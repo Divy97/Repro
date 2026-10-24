@@ -10,15 +10,19 @@ import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, r
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const REPO = resolve(import.meta.dirname, '../../../..');
 const KEY = createHash('sha256').update(REPO).digest('hex').slice(0, 8);
 const STATE_DIR = process.env.REPRO_VERIFY_STATE ?? join(tmpdir(), `repro-verify-${KEY}`);
 const STATE_FILE = join(STATE_DIR, 'state.json');
 const LOG_FILE = join(STATE_DIR, 'serve.log');
+/** Written by `up` into a directory it created; `teardown` deletes nothing without it. */
+const MARKER = join(STATE_DIR, '.repro-verify');
 const CONTAINER = `repro-verify-pg-${KEY}`;
 const LABEL = 'repro-verify.state';
-const TSX = `file://${join(REPO, 'node_modules/tsx/dist/loader.mjs')}`;
+const TSX = pathToFileURL(join(REPO, 'node_modules/tsx/dist/loader.mjs')).href;
+const SERVE = join(REPO, 'src/serve.ts');
 const BUNDLE_INDEX = join(REPO, 'web/out/index.html');
 const BUNDLE_SOURCES = ['web/app', 'web/components', 'web/lib', 'web/next.config.mjs', 'web/package-lock.json'];
 const DEBUG_PORT = 9222;
@@ -49,8 +53,15 @@ const emit = (body: Record<string, unknown>): never => {
   process.exit(body.ok === false ? 1 : 0);
 };
 
-const run = (command: string, args: string[], options: { env?: NodeJS.ProcessEnv; cwd?: string; input?: Buffer } = {}) =>
-  spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...options });
+/** A missing binary leaves stdout and stderr null; this makes it an ordinary failure. */
+const run = (command: string, args: string[], options: { env?: NodeJS.ProcessEnv; cwd?: string } = {}) => {
+  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...options });
+  return {
+    status: result.error ? null : result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? (result.error ? `${command}: ${result.error.message}` : ''),
+  };
+};
 
 const readState = (): State => {
   if (!existsSync(STATE_FILE)) throw new Refusal(`no instance is up for ${REPO} (no ${STATE_FILE}); run \`repro-verify up\``);
@@ -66,10 +77,15 @@ const alive = (pid: number): boolean => {
   }
 };
 
-const commandOf = (pid: number): string => run('ps', ['-o', 'command=', '-p', String(pid)]).stdout.trim();
+const commandOf = (pid: number): string => run('ps', ['-ww', '-o', 'command=', '-p', String(pid)]).stdout.trim();
 
 /** Ours means the serve entrypoint of THIS checkout, so a recycled pid is never signalled. */
-const isOurServe = (pid: number): boolean => alive(pid) && commandOf(pid).includes(join(REPO, 'src/serve.ts'));
+const isOurServe = (pid: number): boolean => alive(pid) && commandOf(pid).includes(SERVE);
+
+/** Chrome started by a `browse` that was killed before it could close it; matched by our profile path. */
+const strayChrome = (): number[] =>
+  run('pgrep', ['-f', '--', `--user-data-dir=${join(STATE_DIR, 'chrome-')}`]).stdout.split('\n').filter(Boolean).map(Number)
+    .filter((pid) => commandOf(pid).includes(`--user-data-dir=${join(STATE_DIR, 'chrome-')}`));
 
 const freePort = (): Promise<number> =>
   new Promise((done, fail) => {
@@ -145,8 +161,22 @@ async function teardown(state: Partial<State> | null): Promise<string[]> {
   const did: string[] = [];
   if (state?.pid && isOurServe(state.pid)) {
     process.kill(state.pid, 'SIGTERM');
-    await wait('serve shutdown', 10_000, () => !alive(state.pid!)).catch(() => process.kill(state.pid!, 'SIGKILL'));
+    await wait('serve shutdown', 10_000, () => !alive(state.pid!)).catch(() => {
+      try {
+        process.kill(state.pid!, 'SIGKILL');
+      } catch {
+        // Exited between the deadline and the kill.
+      }
+    });
     did.push(`stopped serve pid ${state.pid}`);
+  }
+  for (const pid of strayChrome()) {
+    try {
+      process.kill(pid, 'SIGKILL');
+      did.push(`killed stray Chrome pid ${pid}`);
+    } catch {
+      // Already gone.
+    }
   }
   const label = run('docker', ['inspect', '-f', `{{index .Config.Labels "${LABEL}"}}`, CONTAINER]);
   if (label.status === 0 && label.stdout.trim() === STATE_DIR) {
@@ -159,9 +189,11 @@ async function teardown(state: Partial<State> | null): Promise<string[]> {
     mkdirSync(state.evidence, { recursive: true });
     writeFileSync(join(state.evidence, 'serve.log'), readFileSync(LOG_FILE));
   }
-  if (existsSync(STATE_DIR)) {
+  if (existsSync(MARKER)) {
     rmSync(STATE_DIR, { recursive: true, force: true });
     did.push(`removed ${STATE_DIR}`);
+  } else if (existsSync(STATE_DIR)) {
+    did.push(`left ${STATE_DIR} alone: it has no ${MARKER}, so this helper did not create it`);
   }
   return did;
 }
@@ -171,6 +203,13 @@ async function up(): Promise<never> {
     const state = readState();
     if (isOurServe(state.pid)) throw new Refusal(`already up at ${state.dashboard} (pid ${state.pid}); run \`repro-verify doctor\` or \`repro-verify down\``);
     throw new Refusal(`a stale instance is recorded in ${STATE_FILE}; run \`repro-verify down\` first`);
+  }
+  if (existsSync(STATE_DIR)) {
+    throw new Refusal(`${STATE_DIR} already exists; the state directory must be one this helper creates (run \`repro-verify down\`, or point REPRO_VERIFY_STATE at a path that does not exist)`);
+  }
+  // serve.ts boots only when import.meta.url equals `file://${argv[1]}`, which an escaped path never does.
+  if (pathToFileURL(SERVE).href !== `file://${SERVE}`) {
+    throw new Refusal(`src/serve.ts cannot start from ${REPO}: its entrypoint check fails on paths with spaces or URL-escaped characters; use a checkout path without them`);
   }
   if (run('docker', ['inspect', CONTAINER]).status === 0) {
     throw new Refusal(`container ${CONTAINER} already exists; run \`repro-verify down\` first`);
@@ -189,6 +228,7 @@ async function up(): Promise<never> {
   const evidence = join(REPO, '.verify-evidence', runId);
   const ports = { postgres: await freePort(), webhook: await freePort(), events: await freePort() };
   mkdirSync(join(STATE_DIR, 'blobs'), { recursive: true });
+  writeFileSync(MARKER, `${REPO}\n`);
   mkdirSync(evidence, { recursive: true });
 
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -241,7 +281,7 @@ async function up(): Promise<never> {
 
     const log = openSync(LOG_FILE, 'a');
     // cwd is the state dir on purpose: serve.ts loads `./.env`, which fills every variable left unset.
-    const child = spawn(process.execPath, ['--import', TSX, join(REPO, 'src/serve.ts')], {
+    const child = spawn(process.execPath, ['--import', TSX, SERVE], {
       cwd: STATE_DIR,
       env: serviceEnv(state),
       detached: true,
@@ -287,8 +327,13 @@ async function doctor(): Promise<never> {
   check('process', isOurServe(state.pid), `pid ${state.pid}: ${commandOf(state.pid) || 'not running'}`);
 
   for (const [name, port] of [['events', state.ports.events], ['webhook', state.ports.webhook]] as const) {
-    const owners = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']).stdout.trim().split('\n').filter(Boolean);
-    check(`${name} port`, owners.includes(String(state.pid)), `127.0.0.1:${port} held by ${owners.join(',') || 'nobody'}`);
+    const lsof = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']);
+    const owners = lsof.stdout.trim().split('\n').filter(Boolean);
+    check(
+      `${name} port`,
+      owners.includes(String(state.pid)),
+      lsof.status === null ? `cannot tell: ${lsof.stderr} (install lsof)` : `127.0.0.1:${port} held by ${owners.join(',') || 'nobody'}`,
+    );
   }
 
   const url = new URL(state.env.DATABASE_URL!);
@@ -333,7 +378,7 @@ async function webhook(args: string[]): Promise<never> {
     'x-github-event': event,
     'x-github-delivery': delivery,
   };
-  if (!unsigned) headers['x-hub-signature-256'] = `sha256=${createHmac('sha256', state.env.GITHUB_WEBHOOK_SECRET!).update(body.toString()).digest('hex')}`;
+  if (!unsigned) headers['x-hub-signature-256'] = `sha256=${createHmac('sha256', state.env.GITHUB_WEBHOOK_SECRET!).update(body).digest('hex')}`;
   const response = await fetch(state.webhook, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
   return emit({ ok: true, event, delivery, signed: !unsigned, status: response.status, body: (await response.text()).trim() });
 }
@@ -404,6 +449,15 @@ async function browse(argv: string[]): Promise<never> {
   process.env.ENGINE_CHROMIUM_PROFILE = profile;
   const { Browser } = await import(join(REPO, 'src/browser.ts'));
   const browser = new Browser();
+  // Chrome is spawned detached, so a killed helper would otherwise leave it holding 9222.
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      void browser.close().finally(() => {
+        rmSync(profile, { recursive: true, force: true });
+        process.exit(1);
+      });
+    });
+  }
 
   // innerText applies the stylesheet's text-transform (headings render uppercase), so every match ignores case.
   const read = async (): Promise<string> => {

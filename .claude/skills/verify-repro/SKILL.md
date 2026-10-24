@@ -20,18 +20,24 @@ RV=.claude/skills/verify-repro/scripts/repro-verify
 $RV            # usage
 ```
 
-Every subcommand prints one JSON object and exits non-zero when `"ok": false`. The exceptions are `cli`, `sql`, `logs` and `evidence`, which print raw output.
+`up`, `doctor`, `webhook`, `browse` and `down` print one JSON object and exit non-zero when `"ok": false`. `cli`, `sql`, `logs` and `evidence` print raw output on success and a JSON `{"ok": false, "error": …}` on refusal (for example, no instance is up). `webhook` reports `"ok": true` for any answered request, including a `401`. Read its `status`.
 
 ## Safety: read before anything else
 
 - **The developer's `.env` points `DATABASE_URL` at the PRODUCTION database, and a live production worker claims queued jobs.** Never use `--env-file=.env`. Never run an npm script that loads `.env` (`db:apply`, `seed`, `replay`, `status`, `rebuild`, `reconcile`, `worker:pair`, `worker:unpair`). Use `$RV cli …` instead; it runs `src/cli.ts` against the verification database only.
-- `src/serve.ts` calls `process.loadEnvFile('.env')` from its working directory. That call fills every variable not already set, so started from the repository root it would pick up the real GitHub App and model key. `$RV up` therefore starts the service with its cwd in a scratch directory and an environment built from nothing (`env` is not inherited). Do not start `serve.ts` any other way for verification.
+- `src/serve.ts` calls `process.loadEnvFile('.env')` from its working directory. That call fills every variable not already set, so started from the repository root it would pick up the real GitHub App and model key. `$RV up` therefore starts the service, and every `$RV cli` call, with the cwd in a scratch directory and an environment holding only `PATH`, `HOME`, `TMPDIR` and the generated values. Nothing else is inherited, so a `DATABASE_URL` exported in your shell cannot reach it either. Do not start `serve.ts` any other way for verification.
 - No real model runs. The configured key is the placeholder `repro-verify-placeholder-not-a-key`, and every path that would spend it fails at GitHub first.
 - The configured GitHub App does not exist (`GITHUB_APP_ID=repro-verify-no-app`, a freshly generated throwaway key). Some journeys make the service call `api.github.com`, which answers 401. Each feature file says which ones. No push, no PR, nothing reaches a real repository.
 
 ## Launch
 
-Prerequisites: Node 22+, a running Docker daemon, and Chrome or Chromium for `browse`. The first run needs the network for `npm ci`, the dashboard build and `docker pull postgres:17`.
+Prerequisites:
+
+- Node 22+ and a running Docker daemon.
+- Chrome or Chromium for `browse`.
+- `lsof`, `ps` and `pgrep` for `doctor` and `down`. These are standard on macOS; slim Linux images may lack them.
+- A checkout path with no spaces or URL-escaped characters. `src/serve.ts`'s entrypoint check compares `import.meta.url` with an unescaped `argv[1]`, so it silently does not boot from such a path; `up` refuses it up front.
+- The first run needs the network for `npm ci`, the dashboard build and `docker pull postgres:17`.
 
 ```sh
 $RV up
@@ -39,7 +45,7 @@ $RV up
 
 `up`, from a fresh clone:
 
-1. Runs `npm ci` if `node_modules` is missing (the shim does this).
+1. Runs `npm ci` if `node_modules/tsx` is missing (the shim does this, for every subcommand).
 2. Runs `npm run web:build` if `web/out/index.html` is missing or older than anything in `web/app`, `web/components`, `web/lib`, `web/next.config.mjs` or `web/package-lock.json`.
 3. Picks three free ports and starts a dedicated container, `repro-verify-pg-<hash of checkout path>`, from `postgres:17`, published on `127.0.0.1` only and labelled with its state directory.
 4. Waits until Postgres answers over TCP. The image's init-time server is socket-only, so this cannot pass mid-init.
@@ -60,7 +66,7 @@ Ready output (real, from the proof run):
 
 The instance starts empty: no installations, no runs, no recipes. Each feature file seeds what its journey needs through user paths (signed deliveries) or the operator CLI.
 
-The state lives in `$TMPDIR/repro-verify-<hash>/` (override with `REPRO_VERIFY_STATE`). It holds `state.json`, `serve.log`, the throwaway PEM, the blob root and browser profiles. There is one instance per checkout, so `up` refuses while one is recorded.
+The state lives in `$TMPDIR/repro-verify-<hash>/`. It holds `state.json`, `serve.log`, the throwaway PEM, the blob root, browser profiles and a `.repro-verify` marker. To override the location, set `REPRO_VERIFY_STATE` to a path that does **not** exist yet. `up` refuses an existing directory, and `down` deletes only a directory carrying the marker. There is one instance per checkout, so `up` refuses while one is recorded.
 
 ## Doctor
 
@@ -68,7 +74,7 @@ The state lives in `$TMPDIR/repro-verify-<hash>/` (override with `REPRO_VERIFY_S
 $RV doctor
 ```
 
-This is read-only. Run it first, and again whenever anything looks off. All of these must be `ok`:
+This is read-only. Run it right after `up`, before driving anything, and again whenever anything looks off. With no instance up it refuses with "no instance is up". All of these must be `ok`:
 
 | check | what it proves |
 | --- | --- |
@@ -142,7 +148,14 @@ Proof standards:
 $RV down
 ```
 
-`down` stops the service pid only if its command line is this checkout's `src/serve.ts` (SIGTERM, then SIGKILL after 10s). It removes the container only if its label matches this state directory, deletes the state directory, and keeps the evidence. It prints the evidence path and the files kept. Run it after every failed iteration as well. It is safe with nothing running. Never kill by process name.
+`down` does four things, each guarded:
+
+- Stops the service pid only if its command line is this checkout's `src/serve.ts` (SIGTERM, then SIGKILL after 10s).
+- Kills any Chrome left by an interrupted `browse`, matched by this instance's profile path. It never matches by name.
+- Removes the container only if its label matches this state directory.
+- Deletes the state directory only if it carries the marker.
+
+It keeps the evidence. It prints the evidence path and the files kept. Run it after every failed iteration as well. It is safe with nothing running. Never kill by process name.
 
 ## Isolation
 
