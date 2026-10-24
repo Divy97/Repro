@@ -3,7 +3,9 @@
 //
 // Reads the hook's JSON on stdin. Exit 2 blocks the command and shows stderr to the agent.
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /** Drop heredoc bodies, so a commit message that mentions a command is not that command. */
 const withoutHeredocs = (command) => {
@@ -84,6 +86,48 @@ export function blindStaging(command) {
   return null;
 }
 
+/**
+ * The git commands that overwrite the working tree from HEAD or the index, each with the
+ * directory it runs in and the paths it overwrites. `cd <dir>` earlier in the line moves it.
+ */
+export function discards(command, cwd) {
+  const found = [];
+  let here = cwd;
+  for (const words of simpleCommands(command)) {
+    if (words[0] === 'cd' && words[1]) here = resolve(here, words[1]);
+    const git = gitInvocation(words);
+    if (!git) continue;
+    const dir = git.dir ? resolve(here, git.dir) : here;
+    const dashes = git.args.indexOf('--');
+    if (git.sub === 'checkout' && dashes !== -1) found.push({ dir, command: `git checkout ${git.args.join(' ')}`, paths: git.args.slice(dashes + 1) });
+    else if (git.sub === 'checkout' && git.args.includes('.')) found.push({ dir, command: 'git checkout .', paths: ['.'] });
+    else if (git.sub === 'reset' && git.args.includes('--hard')) found.push({ dir, command: `git reset ${git.args.join(' ')}`, paths: ['.'] });
+    else if (git.sub === 'restore') {
+      const staged = git.args.includes('--staged') || git.args.includes('-S');
+      const worktree = git.args.includes('--worktree') || git.args.includes('-W');
+      if (staged && !worktree) continue;
+      const paths = [];
+      for (let i = 0; i < git.args.length; i += 1) {
+        const arg = git.args[i];
+        if (arg === '--source' || arg === '-s') i += 1;
+        else if (arg === '--' || arg.startsWith('-')) continue;
+        else paths.push(arg);
+      }
+      found.push({ dir, command: `git restore ${git.args.join(' ')}`, paths });
+    }
+  }
+  return found.filter((one) => one.paths.length > 0);
+}
+
+/** `git diff --stat` of the uncommitted edits a discard would destroy, or '' when there are none. */
+export function uncommitted({ dir, paths }) {
+  try {
+    return execFileSync('git', ['-C', dir, 'diff', 'HEAD', '--stat', '--', ...paths], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
 const refuse = (message) => {
   process.stderr.write(`${message}\n`);
   process.exit(2);
@@ -101,6 +145,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         'control left there. In this repository it once committed and pushed a reviewer\'s removed ' +
         'security guard. Stage explicit paths (`git add src/x.ts test/x.test.ts`), then read ' +
         '`git diff --cached` before you commit.',
+    );
+  }
+
+  for (const discard of discards(command, input.cwd ?? process.cwd())) {
+    const stat = uncommitted(discard);
+    if (!stat) continue;
+    refuse(
+      `Refused: \`${discard.command}\` would overwrite these uncommitted edits:\n\n${stat}\n\n` +
+        'It restores HEAD or the index, not the state before your last edit, and in this repository it ' +
+        'has deleted finished, uncommitted fixes four times while reverting a mutation control.\n' +
+        '- Edits you want to keep: commit them.\n' +
+        '- For a mutation control, run `npx tsx scripts/mutate.mts <file> <find> <replace> -- <test command>`. ' +
+        'It puts back the bytes the file had, committed or not.\n' +
+        '- To set edits aside on purpose, `git stash push -m "<unique tag>" -- <paths>` keeps them recoverable.',
     );
   }
 }
