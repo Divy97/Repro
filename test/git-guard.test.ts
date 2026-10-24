@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,11 +7,13 @@ import { describe, expect, it } from 'vitest';
 
 const GUARD = fileURLToPath(new URL('../scripts/git-guard.mjs', import.meta.url));
 
-/** Runs the hook the way Claude Code does: the tool call as JSON on stdin. */
-const hook = (command: string, cwd = process.cwd()) => {
+/** Runs the hook the way Claude Code does: the tool call as JSON on stdin, the session's root in the env. */
+const hook = (command: string, cwd = process.cwd(), project: string | null = cwd) => {
+  const { CLAUDE_PROJECT_DIR: _, ...env } = process.env;
   const result = spawnSync('node', [GUARD], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd, tool_input: { command } }),
     encoding: 'utf8',
+    env: project === null ? env : { ...env, CLAUDE_PROJECT_DIR: project },
   });
   return { blocked: result.status === 2, status: result.status, stderr: result.stderr };
 };
@@ -94,5 +96,59 @@ describe('the git guard refuses a checkout that would delete uncommitted work', 
     writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n');
     expect(hook('git checkout -- src/other.ts', root).blocked).toBe(false);
     expect(hook('git restore --staged src/routes.ts', root).blocked).toBe(false);
+  });
+});
+
+/** A repository with uncommitted work whose own config runs a script that leaves a marker. */
+const hostile = (parent: string) => {
+  const root = mkdtempSync(join(parent, 'hostile-'));
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args]);
+  git('init', '-q');
+  writeFileSync(join(root, 'f'), 'a\n');
+  git('add', 'f');
+  git('commit', '-q', '-m', 'base');
+  writeFileSync(join(root, 'f'), 'b\n');
+  const marker = join(root, 'MARKER');
+  writeFileSync(join(root, 'fsmonitor.sh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 });
+  git('config', 'core.fsmonitor', join(root, 'fsmonitor.sh'));
+  rmSync(marker, { force: true });
+  return { root, marker };
+};
+
+describe('the git guard runs none of a target repository\'s own code', () => {
+  it('reads a repository inside the project with its fsmonitor, external diff and hooks switched off', () => {
+    const project = mkdtempSync(join(tmpdir(), 'project-'));
+    const { root, marker } = hostile(project);
+
+    // THE control: the plain probe the guard used to run does execute the repository's config.
+    execFileSync('git', ['-C', root, 'diff', 'HEAD', '--stat']);
+    expect(existsSync(marker)).toBe(true);
+    rmSync(marker);
+
+    const { blocked, stderr } = hook(`git -C ${root} checkout -- f`, process.cwd(), project);
+    expect(blocked).toBe(true);
+    expect(stderr).toContain('uncommitted edits');
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('refuses a discard aimed at a repository outside the project, without reading it', () => {
+    const { root, marker } = hostile(tmpdir());
+    const { blocked, stderr } = hook(`cd ${root} && git checkout -- f`, process.cwd(), mkdtempSync(join(tmpdir(), 'project-')));
+    expect(blocked).toBe(true);
+    expect(stderr).toContain('outside this project');
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('with no CLAUDE_PROJECT_DIR, refuses a discard without running git where the command points', () => {
+    const { root, marker } = hostile(tmpdir());
+    const { blocked, stderr } = hook('git checkout -- f', root, null);
+    expect(blocked).toBe(true);
+    expect(stderr).toContain('project root is unknown');
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('with no CLAUDE_PROJECT_DIR, lets a command that discards nothing through', () => {
+    const { root } = hostile(tmpdir());
+    expect(hook('git status --short', root, null)).toEqual({ blocked: false, status: 0, stderr: '' });
   });
 });
