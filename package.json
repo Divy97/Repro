@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json && tsx scripts/check-casts.mts",
     "build": "tsc -p tsconfig.build.json",
     "images": "docker build -t test-framework-v2-sandbox:latest . && docker build -t test-framework-v2-agent:latest -f Dockerfile.agent .",
     "db:schema": "docker compose exec -T postgres psql -U postgres -d events -f - < db/schema.sql",
