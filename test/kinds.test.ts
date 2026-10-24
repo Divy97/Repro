@@ -221,7 +221,7 @@ describe('a worker does the thing its job says', () => {
  * cannot serve it, and the job would then sit stranded until the two-minute reclaim.
  */
 /**
- * Skip, loudly, rather than fail — the house rule from `test/store.test.ts`.
+ * Skip through `test/fixtures/skip.ts`, which CI fails on, rather than fail here.
  *
  * AND A SECOND GATE, which is the one worth reading. A test that writes to `jobs` needs a
  * queue nobody else is draining, and a shared database — which is what `.env` on this
