@@ -1,5 +1,7 @@
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -51,5 +53,46 @@ describe('the git guard refuses blind staging', () => {
   ])('allows %s', (command) => {
     const result = hook(command);
     expect(result).toEqual({ blocked: false, status: 0, stderr: '' });
+  });
+});
+
+/** A repository whose `src/routes.ts` is committed, as on 2026-09-09. */
+const repository = () => {
+  const root = mkdtempSync(join(tmpdir(), 'git-guard-'));
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src/routes.ts'), 'export const checkKey = () => true;\n');
+  writeFileSync(join(root, 'src/other.ts'), 'export const other = 1;\n');
+  git('add', 'src/routes.ts', 'src/other.ts');
+  git('commit', '-q', '-m', 'base');
+  return { root, file: join(root, 'src/routes.ts') };
+};
+
+describe('the git guard refuses a checkout that would delete uncommitted work', () => {
+  it('refuses the revert that deleted the checkKey seam while it was uncommitted', () => {
+    const { root, file } = repository();
+    writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n// the fix, not yet committed\n');
+    const { blocked, stderr } = hook('git checkout -- src/routes.ts', root);
+    expect(blocked).toBe(true);
+    expect(stderr).toContain('src/routes.ts');
+    expect(stderr).toContain('scripts/mutate.mts');
+  });
+
+  it.each(['git checkout HEAD -- src', 'git checkout .', 'git restore src/routes.ts', 'git reset --hard', 'cd src && git checkout -- routes.ts'])(
+    'refuses %s over the same edits',
+    (command) => {
+      const { root, file } = repository();
+      writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n');
+      expect(hook(command, root).blocked).toBe(true);
+    },
+  );
+
+  it('allows a checkout of a file with nothing uncommitted in it', () => {
+    const { root, file } = repository();
+    writeFileSync(file, 'export const checkKey = (key: string) => probe(key);\n');
+    expect(hook('git checkout -- src/other.ts', root).blocked).toBe(false);
+    expect(hook('git restore --staged src/routes.ts', root).blocked).toBe(false);
   });
 });
