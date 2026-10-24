@@ -156,13 +156,22 @@ export class Browser {
     return `clicked ${selector}`;
   }
 
-  /** Set a field's value and fire the events a framework listens for. */
+  /**
+   * Set a field's value and fire the events a framework listens for.
+   *
+   * Through the prototype's `value` setter, not `el.value =`. React installs its own setter on
+   * a controlled field's instance to track the last value it saw; an assignment through it
+   * updates that record, the input event then looks like no change, and `onChange` never fires.
+   */
   async type(selector: string, text: string): Promise<string> {
     await this.start();
     const result = await this.evaluate(
       `(() => { const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return 'missing';
-        el.focus(); el.value = ${JSON.stringify(text)};
+        let proto = Object.getPrototypeOf(el), setter;
+        while (proto && !(setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set)) proto = Object.getPrototypeOf(proto);
+        el.focus();
+        if (setter) setter.call(el, ${JSON.stringify(text)}); else el.value = ${JSON.stringify(text)};
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return 'typed'; })()`,
