@@ -14,8 +14,9 @@
 # port and every other decision still come from `src/browser.ts` — that file is the thing
 # under test, and a wrapper that started deciding those would be testing itself.
 #
-# Used only by `test/dashboard.browser.test.ts`, which points `ENGINE_CHROMIUM` here for
-# the life of that one file and restores it afterwards.
+# Used by `test/dashboard.browser.test.ts`, which points `ENGINE_CHROMIUM` here for the
+# life of that one file and restores it afterwards, and by the verify-repro skill's
+# `.claude/skills/verify-repro/scripts/chromium-window.sh`, which execs it with a window size.
 set -eu
 
 : "${ENGINE_CHROMIUM_BIN:?ENGINE_CHROMIUM_BIN is unset: the caller names the real browser}"

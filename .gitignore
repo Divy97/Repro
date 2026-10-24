@@ -32,6 +32,8 @@ sandboxes.jsonl
 # upload, and a runner holds what its containers produce before they are shipped.
 .plane-blobs/
 .runner-blobs/
+# What `.claude/skills/verify-repro` captures from a local run: screenshots, page text, logs.
+.verify-evidence/
 *.log
 .DS_Store
 .neon
