@@ -11,6 +11,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { Browser } from '../../../../src/browser.js';
 
 const REPO = resolve(import.meta.dirname, '../../../..');
 const KEY = createHash('sha256').update(REPO).digest('hex').slice(0, 8);
@@ -536,20 +537,6 @@ type Step = { op: string; args: string[] };
 
 const ARITY: Record<string, number> = { go: 1, wait: 1, absent: 1, click: 1, fill: 2, shot: 1, text: 1, console: 1 };
 
-/**
- * Not `Browser.type`, which has a product bug (observed, not fixed here; it also backs the
- * engine agent's `browser_type` tool): it assigns `el.value`, which React's value tracker
- * absorbs, so a controlled input's onChange never fires. The prototype's setter is what React observes.
- */
-const FILL = (selector: string, text: string) => `(() => {
-  const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) return 'missing';
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(text)});
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  return 'filled';
-})()`;
-
 function parseSteps(argv: string[]): Step[] {
   const steps: Step[] = [];
   for (let i = 0; i < argv.length; ) {
@@ -582,7 +569,6 @@ async function browse(argv: string[]): Promise<never> {
   process.env.ENGINE_CHROMIUM = join(import.meta.dirname, 'chromium-window.sh');
   process.env.ENGINE_CHROMIUM_BIN = binary;
   process.env.ENGINE_CHROMIUM_PROFILE = profile;
-  const { Browser } = await import(join(REPO, 'src/browser.ts'));
   const browser = new Browser();
   // Chrome is spawned detached, so a killed helper would otherwise leave it holding 9222.
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -650,12 +636,7 @@ async function browse(argv: string[]): Promise<never> {
         await poll(new RegExp(a, 'i'), false);
         results.push({ op, pattern: a, seen: false });
       } else if (op === 'click') results.push({ op, result: await browser.click(a) });
-      else if (op === 'fill') {
-        // `evaluate` is private to Browser; this is the one place the helper reaches past its API.
-        const filled = await browser.evaluate(FILL(a, b));
-        if (filled === 'missing') throw new Refusal(`nothing matches ${a}`);
-        results.push({ op, result: `filled ${a}` });
-      }
+      else if (op === 'fill') results.push({ op, result: await browser.type(a, b) });
       else if (op === 'shot') {
         const path = join(state.evidence, `${a}.png`);
         writeFileSync(path, await browser.screenshot());

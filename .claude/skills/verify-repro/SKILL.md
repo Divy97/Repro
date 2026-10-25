@@ -110,7 +110,7 @@ This is read-only. Run it right after `up`, before driving anything, and again w
 | `wait RE` | poll the page's `innerText` until the case-insensitive regex matches (15s) |
 | `absent RE` | poll until it does NOT match (15s). A page that cannot be read never counts as absent |
 | `click CSS` | `element.click()` on the first match |
-| `fill CSS TEXT` | set an input or textarea value so React's `onChange` fires |
+| `fill CSS TEXT` | set an input or textarea value through `Browser.type`, so React's `onChange` fires |
 | `shot NAME` | viewport PNG to `<evidence>/NAME.png` (window 1280x1000, `REPRO_VERIFY_WINDOW=w,h` to change) |
 | `text NAME` | page `innerText` to `<evidence>/NAME.txt`; fails if the page cannot be read (an SVG or other non-HTML document has no `body`) |
 | `console NAME` | console, browser log and uncaught exceptions to `<evidence>/NAME.console.txt` |
