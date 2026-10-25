@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import { get } from '../src/blobs.js';
 import type { ArtifactRef, RunEvent } from '../src/events.js';
 import { confidence } from '../src/confidence.js';
@@ -3157,8 +3158,8 @@ describe.skipIf(!haveDocker)('the engine runs inside the sandbox', () => {
   // fail, and the one thing 6b's done-when requires — a draft a human can approve —
   // would never exist.
 
-  test('a drafting session reaches the network, though no recipe has ever existed for this repo', async () => {
-    if (!haveDocker) return;
+  test('a drafting session reaches the network, though no recipe has ever existed for this repo', async (context) => {
+    if (!haveDocker) return skip(context, 'no Docker daemon');
     execFileSync('docker', ['build', '-q', '-t', IMAGE, '.'], { cwd: process.cwd() });
     const fixture = clean();
 
@@ -3225,13 +3226,10 @@ describe('the browser, in the agent sandbox only', () => {
     }
   };
 
-  test('the agent sees the wrong string by looking, and commits a test that needs no browser', async () => {
-    if (!haveDocker) return;
+  test('the agent sees the wrong string by looking, and commits a test that needs no browser', async (context) => {
+    if (!haveDocker) return skip(context, 'no Docker daemon');
     if (!agentImageAvailable()) {
-      // Explicit, with the command. A silent pass here would be the false green this
-      // file exists to refuse.
-      console.log(`SKIPPED (browser): ${AGENT_IMAGE} is not built — run \`docker build -f Dockerfile.agent -t ${AGENT_IMAGE} .\``);
-      return;
+      return skip(context, `${AGENT_IMAGE} is not built — run \`docker build -f Dockerfile.agent -t ${AGENT_IMAGE} .\``);
     }
     execFileSync('docker', ['build', '-q', '-t', IMAGE, '.'], { cwd: process.cwd() });
     const fixture = demoRepo();
@@ -3332,8 +3330,8 @@ describe('the browser, in the agent sandbox only', () => {
     }
   }, 900_000);
 
-  test('a phase container has no browser in it, and that is a property of its image', () => {
-    if (!haveDocker) return;
+  test('a phase container has no browser in it, and that is a property of its image', (context) => {
+    if (!haveDocker) return skip(context, 'no Docker daemon');
     execFileSync('docker', ['build', '-q', '-t', IMAGE, '.'], { cwd: process.cwd() });
 
     // The claim is an ABSENCE, so the test is over the image the phases run. A flag

@@ -1,34 +1,37 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { SkipGate } from './test/fixtures/skip.js';
 
-// `.env` holds DATABASE_URL, and `test/store.test.ts` is the only coverage the SQL
-// has. Without this it skipped for want of a variable that was sitting on disk — a
-// skip nobody would notice, which is the worst kind. `loadEnvFile` is Node 22's own,
-// so no dotenv; wrapped because a machine with no `.env` is a valid state and the
-// test's skip message is the correct outcome there.
-try {
-  process.loadEnvFile?.('.env');
-} catch {
-  // No .env. `test/store.test.ts` will say so in its skip message.
-}
-
-// …and then scrub the model selection back out, because `.env` is the operator's
-// configuration and this suite is not supposed to have one.
+// THE SUITE NEVER READS `.env`. That file is the operator's configuration, and in the main
+// checkout its `DATABASE_URL` is the production database. While this file loaded it, the
+// suite ran there: `test/plane.test.ts` raced the live worker for weeks, a queue drain in a
+// test would have stamped every real queued run, and `test/secrets.test.ts` left 37 rows in
+// production. A database test gets its database from the environment the command was run
+// with, as CI does, and nothing else.
 //
-// Not tidiness. The moment a real `ENGINE_PROVIDER=openrouter` landed in `.env` for an
-// actual run, six tests went red: every Anthropic-path test was routed through the
-// OpenRouter branch, where the scripted **Messages API** fixture is the wrong wire
-// format, so the agent did nothing and the reproduction was never registered. Nothing in
-// the failures pointed at a file on disk that no test mentions.
-//
-// The suite's central promise is that it needs no credential and no configuration —
-// every model is a scripted server on a local port. A developer's `.env` deciding
-// whether the suite passes breaks that promise silently, and silently is the part this
-// project refuses. A test that wants a provider sets it itself; `openrouter.test.ts`
-// does exactly that, and its "defaults to anthropic" case is only a real assertion
-// because of these five lines.
+// The model selection is scrubbed for the same reason, from wherever it came. When
+// `ENGINE_PROVIDER=openrouter` reached the suite, six tests went red: every Anthropic-path
+// test went down the OpenRouter branch, where the scripted Messages API fixture is the
+// wrong wire format. A test that wants a provider sets it itself; `openrouter.test.ts`
+// does, and its "defaults to anthropic" case is a real assertion only because of this.
 for (const key of ['ENGINE_PROVIDER', 'ENGINE_MODEL', 'ENGINE_EFFORT', 'OPENROUTER_API_KEY']) {
   delete process.env[key];
+}
+
+// And a database somewhere else is refused outright, however it got here. These tests
+// queue jobs a live worker claims, terminate backends on purpose, and write rows they do
+// not all delete. A shell that exported the production URL is the same mistake as `.env`.
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+if (process.env.DATABASE_URL) {
+  const host = new URL(process.env.DATABASE_URL).hostname;
+  if (!LOOPBACK.has(host)) {
+    throw new Error(
+      `DATABASE_URL names ${host}, and this suite runs only against a database on this machine. ` +
+        'Start one with `docker run -d -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=events -p 127.0.0.1:55432:5432 postgres:17`, ' +
+        'apply the schema with `DATABASE_URL=postgres://postgres:ci@127.0.0.1:55432/events npx tsx src/cli.ts schema --yes`, ' +
+        'and run the suite with that DATABASE_URL. Unset it to skip the database tests.',
+    );
+  }
 }
 
 // The engine fixtures shell out to real git and run a repro three times, so the
@@ -53,6 +56,8 @@ export default defineConfig({
   },
   test: {
     testTimeout: 30_000,
+    // A skip in CI is a check that did not run on a green build. See `test/fixtures/skip.ts`.
+    reporters: ['default', new SkipGate()],
     // `.claude/worktrees/*` holds full checkouts of this repository, so the default
     // glob collected every test file TWICE — 18 files where there are 9, and every
     // container test run against a copy of `src` nobody is editing. It doubled the

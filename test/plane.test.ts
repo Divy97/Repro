@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import type { RunEvent } from '../src/events.js';
 import { digest, get } from '../src/blobs.js';
 import type { ArtifactRef } from '../src/events.js';
@@ -39,8 +40,8 @@ beforeAll(async () => {
   // ── WHY THIS FILE FAILS 10–15 TESTS AGAINST A SHARED DATABASE ───────────────────
   //
   // Not contention with itself, which is what it looked like for weeks. `vitest.config.ts`
-  // loads `.env`, this repository's `.env` points at the production database, and a live
-  // global worker there long-polls `/runner/jobs` every 500ms taking any installation's job
+  // loaded `.env` until it was made to refuse a remote database. This repository's `.env`
+  // points at the production database, and a live global worker there long-polls `/runner/jobs` every 500ms taking any installation's job
   // of any kind. It claims the jobs this file queues — verified in the worker's own log,
   // which shows it taking `o/r`, the repository below — so `claimJob` here returns 204 and
   // the assertions about who holds what fail.
@@ -54,7 +55,7 @@ beforeAll(async () => {
   // the fix is a database of your own: `docker compose up -d`, and point `DATABASE_URL` at
   // it. Then this file is deterministic.
   if (!process.env.DATABASE_URL) {
-    why = 'DATABASE_URL is not set (copy .env.example to .env and `docker compose up -d`)';
+    why = 'DATABASE_URL is not set (the suite never reads .env; set it to a Postgres on this machine)';
     return;
   }
   try {
@@ -135,27 +136,22 @@ const event = (runId: string, seq: number, text = 'the shipped filter returns ev
     payload: { v: 1, source: 'github_issue', thread_ref: 'o/r#1', raw_text: text },
   }) as RunEvent;
 
-const skipped = (): boolean => {
-  if (client) return false;
-  expect.fail(`the runner boundary was NOT verified: ${why}`);
-};
-
 describe('a machine has to be paired to say anything', () => {
-  test('an unknown token is nobody', async () => {
-    if (skipped()) return;
+  test('an unknown token is nobody', async (context) => {
+    if (!client) return skip(context, why);
     const response = await call('tfr_not-a-real-token', 'GET', '/runner/jobs');
     expect(response.status).toBe(401);
   });
 
-  test('a missing header is nobody, and says how to be somebody', async () => {
-    if (skipped()) return;
+  test('a missing header is nobody, and says how to be somebody', async (context) => {
+    if (!client) return skip(context, why);
     const response = await call(undefined, 'GET', '/runner/jobs');
     expect(response.status).toBe(401);
     expect(String(response.body['error'])).toContain('Authorization: Bearer');
   });
 
-  test('a revoked runner stops being able to write, and stays in the table', async () => {
-    if (skipped()) return;
+  test('a revoked runner stops being able to write, and stays in the table', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const { runner, token } = await pair(id);
     expect((await call(token, 'GET', '/runner/jobs')).status).toBe(204);
@@ -192,8 +188,8 @@ describe('a machine has to be paired to say anything', () => {
     expect((await call(victim.token, 'GET', '/runner/jobs')).status).toBe(204);
   });
 
-  test('polling stamps presence, so "nobody is online" is different from "nobody is paired"', async () => {
-    if (skipped()) return;
+  test('polling stamps presence, so "nobody is online" is different from "nobody is paired"', async (context) => {
+    if (!client) return skip(context, why);
     const { runner, token } = await pair(installation());
     const before = await client!.query('select last_seen from runners where id = $1', [runner.id]);
     expect(before.rows[0].last_seen).toBeNull();
@@ -205,8 +201,8 @@ describe('a machine has to be paired to say anything', () => {
 });
 
 describe('work goes to the machine it was dispatched to', () => {
-  test('a runner claims its own installation s job and nobody else s', async () => {
-    if (skipped()) return;
+  test('a runner claims its own installation s job and nobody else s', async (context) => {
+    if (!client) return skip(context, why);
     const mine = installation();
     const theirs = installation();
     const runId = await queue(mine);
@@ -223,8 +219,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect((await call(token, 'GET', '/runner/jobs')).status).toBe(204);
   });
 
-  test('a runner belonging to NO installation takes anyone s job (M10, 10e)', async () => {
-    if (skipped()) return;
+  test('a runner belonging to NO installation takes anyone s job (M10, 10e)', async (context) => {
+    if (!client) return skip(context, why);
     // The worker this project operates is one process serving everyone who installs the
     // App, so it cannot name an installation. `null` means any — and the test above,
     // which this must not weaken, is the other half: a runner that DOES name one is
@@ -237,7 +233,7 @@ describe('work goes to the machine it was dispatched to', () => {
     //
     // The first version of this test claimed every unclaimed job first, to get a known
     // starting point. That is a global runner doing exactly what it is for — and
-    // `vitest.config.ts` calls `process.loadEnvFile('.env')`, whose `DATABASE_URL` in the
+    // `vitest.config.ts` then called `process.loadEnvFile('.env')`, whose `DATABASE_URL` in the
     // main checkout is the PRODUCTION Neon pooler. `npm test` would have stamped
     // `runner_id` on every real queued run, making each permanently undeliverable and
     // blocking its issue for two hours, then failed to clean up on the foreign key and
@@ -262,8 +258,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect(claimed).toContain(second);
   });
 
-  test('the token is minted for the JOB s installation, never the runner s', async () => {
-    if (skipped()) return;
+  test('the token is minted for the JOB s installation, never the runner s', async (context) => {
+    if (!client) return skip(context, why);
     // The rule this replaces read "the runner's OWN installation, never one it names",
     // which was right while every runner named one and is unanswerable for a worker whose
     // own field is null. Reading the `jobs` row is correct for both — and for a confined
@@ -300,8 +296,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect(minted).toEqual([owner]);
   });
 
-  test('a global worker CAN be revoked, which `=` made impossible', async () => {
-    if (skipped()) return;
+  test('a global worker CAN be revoked, which `=` made impossible', async (context) => {
+    if (!client) return skip(context, why);
     // The credential this is about: one token that claims any installation's job and then
     // mints that installation's GitHub App token. `installation_id = $2` matched nothing
     // for a null row — `null = null` is null — so no value revoked it, including null,
@@ -315,8 +311,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect(await revokeRunner(client!, runner.id, null)).toBe(false);
   });
 
-  test('and revoking is still scoped — the widening admits nobody new', async () => {
-    if (skipped()) return;
+  test('and revoking is still scoped — the widening admits nobody new', async (context) => {
+    if (!client) return skip(context, why);
     // The worry with `is not distinct from` is that it loosens who may revoke what. It
     // does not: the caller supplies the installation, and a confined runner still cannot
     // be revoked by naming the wrong one, or by naming none.
@@ -329,8 +325,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect(await revokeRunner(client!, runner.id, mine)).toBe(true);
   });
 
-  test('and a confined runner still gets its OWN installation minted', async () => {
-    if (skipped()) return;
+  test('and a confined runner still gets its OWN installation minted', async (context) => {
+    if (!client) return skip(context, why);
     // The other half of the comment on that change: "for a confined runner the two values
     // are equal by construction, so nothing changed for it." Asserted rather than
     // asserted-in-prose — reading the job's row must not have altered the answer for the
@@ -363,8 +359,8 @@ describe('work goes to the machine it was dispatched to', () => {
     expect(minted).toEqual([runner.installationId]);
   });
 
-  test('two runners on one installation never take the same job', async () => {
-    if (skipped()) return;
+  test('two runners on one installation never take the same job', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const a = await pair(id, 'a');
@@ -381,8 +377,8 @@ describe('work goes to the machine it was dispatched to', () => {
 });
 
 describe('the log admits one writer per run, and it is a check now', () => {
-  test('the dispatched runner appends, and the events are in the log', async () => {
-    if (skipped()) return;
+  test('the dispatched runner appends, and the events are in the log', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const { token } = await pair(id);
@@ -398,8 +394,8 @@ describe('the log admits one writer per run, and it is a check now', () => {
     expect(rows.map((r) => r.seq)).toEqual([1, 2]);
   });
 
-  test('ANOTHER runner is refused, and writes nothing', async () => {
-    if (skipped()) return;
+  test('ANOTHER runner is refused, and writes nothing', async (context) => {
+    if (!client) return skip(context, why);
     // The test this whole module exists for. Same installation — so it is not enough to
     // check the tenant — and a valid, unrevoked token.
     const id = installation();
@@ -418,8 +414,8 @@ describe('the log admits one writer per run, and it is a check now', () => {
     expect(rows[0].n).toBe(0);
   });
 
-  test('a run nobody was dispatched is not a run', async () => {
-    if (skipped()) return;
+  test('a run nobody was dispatched is not a run', async (context) => {
+    if (!client) return skip(context, why);
     const { token } = await pair(installation());
     const invented = randomUUID();
     const response = await call(token, 'POST', `/runner/runs/${invented}/events`, {
@@ -468,8 +464,8 @@ describe('the log admits one writer per run, and it is a check now', () => {
   });
 
 describe('an append is idempotent, and history is not', () => {
-  test('replaying the identical batch appends nothing and succeeds', async () => {
-    if (skipped()) return;
+  test('replaying the identical batch appends nothing and succeeds', async (context) => {
+    if (!client) return skip(context, why);
     // A runner on a home connection retries. If a retry were an error, operators would
     // stop retrying, and the events lost would be the evidence.
     const id = installation();
@@ -487,8 +483,8 @@ describe('an append is idempotent, and history is not', () => {
     expect(rows[0].n).toBe(2);
   });
 
-  test('the same seq with different bytes is refused, and the original stands', async () => {
-    if (skipped()) return;
+  test('the same seq with different bytes is refused, and the original stands', async (context) => {
+    if (!client) return skip(context, why);
     // The append-only claim, made real against the one participant with a legitimate
     // reason to write here. Without this, "immutable" means "nobody has tried yet".
     const id = installation();
@@ -507,8 +503,8 @@ describe('an append is idempotent, and history is not', () => {
     expect(JSON.stringify(rows[0].payload)).not.toContain('something else entirely');
   });
 
-  test('an event naming a different run is refused before it is written', async () => {
-    if (skipped()) return;
+  test('an event naming a different run is refused before it is written', async (context) => {
+    if (!client) return skip(context, why);
     // The batch is authorized once, by path. Without this check a single authorized
     // batch could carry events for any run in the database.
     const id = installation();
@@ -525,14 +521,14 @@ describe('an append is idempotent, and history is not', () => {
     expect(rows[0].n).toBe(0);
   });
 
-  test.each([
+  test.for([
     ['not an object', { events: 'nope' }],
     ['empty', { events: [] }],
     ['no seq', { events: [{ run_id: 'x', type: 'RUN_REQUESTED', ts: 't', payload: {} }] }],
     ['a fractional seq', { events: [{ run_id: 'x', seq: 1.5, type: 'X', ts: 't', payload: {} }] }],
     ['a payload that is not an object', { events: [{ run_id: 'x', seq: 1, type: 'X', ts: 't', payload: 'no' }] }],
-  ])('a malformed batch (%s) is refused rather than folded later', async (_name, body) => {
-    if (skipped()) return;
+  ])('a malformed batch (%s) is refused rather than folded later', async ([, body], context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const { token } = await pair(id);
@@ -552,8 +548,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     return { runId, token, id };
   };
 
-  test('bytes upload under the run that owns them, and are readable by ref', async () => {
-    if (skipped()) return;
+  test('bytes upload under the run that owns them, and are readable by ref', async (context) => {
+    if (!client) return skip(context, why);
     const { runId, token } = await dispatched();
     const bytes = Buffer.from('not ok 3 - totals\n  expected 300, got 297\n');
     const ref = digest(bytes);
@@ -567,8 +563,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     expect((await get(blobRoot(), ref)).toString()).toContain('expected 300, got 297');
   });
 
-  test('a screenshot survives, which the string body would have destroyed', async () => {
-    if (skipped()) return;
+  test('a screenshot survives, which the string body would have destroyed', async (context) => {
+    if (!client) return skip(context, why);
     // The reason `Route` grew a bytes body at all. Every value 0x00–0xFF, which is what
     // a PNG is and what UTF-8 decoding silently rewrites — the old `body()` would have
     // hashed to something else and been refused as a forgery.
@@ -580,8 +576,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     expect(Buffer.compare(await get(blobRoot(), ref), bytes)).toBe(0);
   });
 
-  test('bytes that are not what they claim to be are refused, and nothing is written', async () => {
-    if (skipped()) return;
+  test('bytes that are not what they claim to be are refused, and nothing is written', async (context) => {
+    if (!client) return skip(context, why);
     const { runId, token } = await dispatched();
     const honest = Buffer.from('what actually happened');
     const lie = digest(Buffer.from('what somebody would rather had happened'));
@@ -596,8 +592,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     await expect(get(blobRoot(), digest(honest))).rejects.toThrow();
   });
 
-  test('a blob for somebody else s run is refused', async () => {
-    if (skipped()) return;
+  test('a blob for somebody else s run is refused', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const mine = await pair(id, 'mine');
@@ -610,8 +606,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     await expect(get(blobRoot(), digest(bytes))).rejects.toThrow();
   });
 
-  test('an oversized body says it is too large, rather than failing its digest', async () => {
-    if (skipped()) return;
+  test('an oversized body says it is too large, rather than failing its digest', async (context) => {
+    if (!client) return skip(context, why);
     // The failure this closes: the old reader truncated silently at its ceiling, so an
     // oversized upload arrived as a digest mismatch — an operational limit wearing a
     // tamper signal's clothes, on the one check that is supposed to mean tampering.
@@ -622,8 +618,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     expect(String(response.body['error'])).toContain('may not exceed');
   });
 
-  test('a re-upload is a no-op that succeeds, because a retry must not be an error', async () => {
-    if (skipped()) return;
+  test('a re-upload is a no-op that succeeds, because a retry must not be an error', async (context) => {
+    if (!client) return skip(context, why);
     const { runId, token } = await dispatched();
     const bytes = Buffer.from('the same output twice');
     const ref = digest(bytes) as ArtifactRef;
@@ -633,8 +629,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
     expect((await get(blobRoot(), ref)).toString()).toBe('the same output twice');
   });
 
-  test('a ref that is not content-addressed is not a route at all', async () => {
-    if (skipped()) return;
+  test('a ref that is not content-addressed is not a route at all', async (context) => {
+    if (!client) return skip(context, why);
     const { runId, token } = await dispatched();
     const response = await call(token, 'PUT', `/runner/runs/${runId}/blobs/sha256:nope`, {
       raw: Buffer.from('x'),
@@ -644,8 +640,8 @@ describe('blobs cross the boundary, or do not land at all (9b)', () => {
 });
 
 describe('the bill is written by the runner that holds the run, and nobody else', () => {
-  test('usage and compute land beside the log, keyed by sandbox and not by phase', async () => {
-    if (skipped()) return;
+  test('usage and compute land beside the log, keyed by sandbox and not by phase', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const { token } = await pair(id);
@@ -709,8 +705,8 @@ describe('the bill is written by the runner that holds the run, and nobody else'
     expect(events[0].n).toBe(0);
   });
 
-  test('ANOTHER runner cannot write a bill against this run', async () => {
-    if (skipped()) return;
+  test('ANOTHER runner cannot write a bill against this run', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const runId = await queue(id);
     const mine = await pair(id, 'mine');
@@ -724,8 +720,8 @@ describe('the bill is written by the runner that holds the run, and nobody else'
     expect(await readCompute(client!, runId)).toEqual([]);
   });
 
-  test('the run a row belongs to comes from the PATH, never from the body', async () => {
-    if (skipped()) return;
+  test('the run a row belongs to comes from the PATH, never from the body', async (context) => {
+    if (!client) return skip(context, why);
     // A runner authorized for one run must not be able to write against another by
     // naming it in the payload — the same rule the append path applies to `run_id`.
     const id = installation();
@@ -763,8 +759,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     return { runId, gone };
   };
 
-  test('another runner claims it, and the dead one can no longer write to it', async () => {
-    if (skipped()) return;
+  test('another runner claims it, and the dead one can no longer write to it', async (context) => {
+    if (!client) return skip(context, why);
     const id = installation();
     const { runId, gone } = await stranded(id);
 
@@ -782,8 +778,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(rows[0].n).toBe(0);
   });
 
-  test('THE rolling-deploy case: the SAME runner row takes it back', async () => {
-    if (skipped()) return;
+  test('THE rolling-deploy case: the SAME runner row takes it back', async (context) => {
+    if (!client) return skip(context, why);
     // The worker's pairing token is a Fly APP secret, so every machine across a deploy
     // authenticates as one `runners` row. The first version of this fix compared
     // `runners.last_seen` to `dispatched_at` — and a runner heartbeats BEFORE it claims,
@@ -803,8 +799,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(polled.body['runId']).toBe(runId);
   });
 
-  test('THE control: a run that has started is never taken from its author', async () => {
-    if (skipped()) return;
+  test('THE control: a run that has started is never taken from its author', async (context) => {
+    if (!client) return skip(context, why);
     // ADR-0009's single producer. Once seq 1 exists the run has an author, and no lease
     // may take that away — an agent phase can think for an hour without a plane request.
     const id = installation();
@@ -817,8 +813,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(await claimJob(client!, alive.runner)).toBeNull();
   });
 
-  test('and a runner that has said anything ABOUT THIS RUN keeps it', async () => {
-    if (skipped()) return;
+  test('and a runner that has said anything ABOUT THIS RUN keeps it', async (context) => {
+    if (!client) return skip(context, why);
     // The other half, and through a real route rather than an UPDATE: `run.ts` mints an
     // installation token before the clone, that mint goes through `appendFromRunner` like
     // every run-scoped route, and stamping there is what tells a still-working runner
@@ -833,8 +829,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(rows[0].runner_id).toBe(gone.runner.id);
   });
 
-  test('and one still inside the grace period is left alone, right up to the edge', async () => {
-    if (skipped()) return;
+  test('and one still inside the grace period is left alone, right up to the edge', async (context) => {
+    if (!client) return skip(context, why);
     // BACKDATED TO JUST UNDER the interval, not to `now()`. Dispatching and claiming a
     // few milliseconds later only proves "0ms is inside 2 minutes" — it pins the constant
     // from above and not from below, and `milliseconds` → `microseconds` (a 1000x
@@ -860,8 +856,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect((await claimJob(client!, other.runner))?.runId).toBe(runId);
   });
 
-  test('and a FINISHED job is never re-dispatched, even having written nothing', async () => {
-    if (skipped()) return;
+  test('and a FINISHED job is never re-dispatched, even having written nothing', async (context) => {
+    if (!client) return skip(context, why);
     // A run that failed before seq 1 and was marked finished has no events at all, so the
     // `not exists (events)` clause alone would hand it out forever.
     const id = installation();
@@ -872,8 +868,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(await claimJob(client!, other.runner)).toBeNull();
   });
 
-  test('and the installation boundary holds on the reclaim, which is a SECOND way in', async () => {
-    if (skipped()) return;
+  test('and the installation boundary holds on the reclaim, which is a SECOND way in', async (context) => {
+    if (!client) return skip(context, why);
     // The comment above `claimJob` calls widening this "the worst bug in this file", and
     // this change doubles the number of ways a row can be selected. Moving the
     // `installation_id` filter inside the `runner_id is null` branch — leaving the reclaim
@@ -888,8 +884,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(rows[0].runner_id).not.toBe(confined.runner.id);
   });
 
-  test('and a job that strands every time stops being handed out', async () => {
-    if (skipped()) return;
+  test('and a job that strands every time stops being handed out', async (context) => {
+    if (!client) return skip(context, why);
     // Without a ceiling, a job whose runner dies on every attempt is re-dispatched every
     // two minutes for as long as the queue exists, each attempt paying for a clone and a
     // token mint.
@@ -909,8 +905,8 @@ describe('a job nobody ever came for goes back on the queue', () => {
     expect(taken).toBe(4);
   });
 
-  test('and revoking a runner puts back what it never started', async () => {
-    if (skipped()) return;
+  test('and revoking a runner puts back what it never started', async (context) => {
+    if (!client) return skip(context, why);
     // A revoked runner never comes back: its next request is a 401, including the
     // `/finished` that would have released the job — and the daemon swallows that one. If
     // it had already stamped `heard_at`, the job would wait forever rather than two

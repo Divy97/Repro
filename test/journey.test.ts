@@ -23,6 +23,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skip } from './fixtures/skip.js';
 import type { RunEvent } from '../src/events.js';
 import { loadInstallation } from '../src/installations.js';
 import { listRuns, readRunRow, rebuildProjection, readUsage } from '../src/readmodel.js';
@@ -179,13 +180,13 @@ afterAll(async () => {
 });
 
 describe.sequential('a repository from install to evidence', () => {
-  it('has somewhere to run', () => {
-    if (!ready) console.log(`SKIPPED (journey): no usable database — ${why}`);
-    expect(true).toBe(true);
+  it('has somewhere to run', (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
+    expect(service).not.toBeNull();
   });
 
-  it('1. an installation delivery is what makes the repository known', async () => {
-    if (!ready) return;
+  it('1. an installation delivery is what makes the repository known', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     // Before M6a this delivery was answered `202 not a trigger` and discarded, so the
     // first thing we ever learned about a repository was an issue.
     const response = await deliver('installation', {
@@ -201,8 +202,8 @@ describe.sequential('a repository from install to evidence', () => {
     expect(await loadRecipe(client!, REPO)).toBeNull();
   });
 
-  it('2. an issue on it starts NO run, and says why on the issue', async () => {
-    if (!ready) return;
+  it('2. an issue on it starts NO run, and says why on the issue', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     await deliver('issues', issueDelivery(1));
     await service!.drain();
 
@@ -215,8 +216,8 @@ describe.sequential('a repository from install to evidence', () => {
     expect(comments[0]!.body).toMatch(/not onboarded yet/);
   });
 
-  it('3. the repository shows as not onboarded on the dashboard', async () => {
-    if (!ready) return;
+  it('3. the repository shows as not onboarded on the dashboard', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     const rows = await asJson<{ repo: string; onboarded: boolean }[]>('/api/repos');
     const row = rows.find((one) => one.repo === REPO);
     // The row's most important column: a run against a repository with no recipe boots
@@ -231,8 +232,8 @@ describe.sequential('a repository from install to evidence', () => {
     expect(shell.headers.get('content-security-policy')).toMatch(/script-src 'self'/);
   });
 
-  it('4. approving a recipe is a human POST, and it is the only write there is', async () => {
-    if (!ready) return;
+  it('4. approving a recipe is a human POST, and it is the only write there is', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     // ADR-0013: the approval is the only control on a stored command we will execute
     // verbatim, in a sandbox, with a registry reachable. So it is a form a person
     // submits — not something the drafting agent can complete on its own.
@@ -250,8 +251,8 @@ describe.sequential('a repository from install to evidence', () => {
     expect(await loadRecipe(client!, REPO)).toMatchObject({ install: 'npm ci' });
   });
 
-  it('5. a malformed recipe is refused with its own reason, not stored', async () => {
-    if (!ready) return;
+  it('5. a malformed recipe is refused with its own reason, not stored', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     // `parseRecipe` refuses a shape that would otherwise fail inside a container, where
     // it reads as the user's project being broken rather than their recipe being wrong.
     const response = await page(`/api/repos/${encodeURIComponent(REPO)}/recipe`, {
@@ -267,15 +268,15 @@ describe.sequential('a repository from install to evidence', () => {
     expect(await loadRecipe(client!, REPO)).toMatchObject({ install: 'npm ci' });
   });
 
-  it('6. now the same issue starts a run', async () => {
-    if (!ready) return;
+  it('6. now the same issue starts a run', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     await deliver('issues', issueDelivery(2));
     await service!.drain();
     expect(started).toEqual([REPO]);
   });
 
-  it('7. the run appears on the dashboard, derived from the log', async () => {
-    if (!ready) return;
+  it('7. the run appears on the dashboard, derived from the log', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     // The run is faked, so its events are written here — which is the honest way round:
     // the projection reads the LOG, so a projection that only worked when `runFromIssue`
     // handed it a result would be reading something else.
@@ -316,16 +317,16 @@ describe.sequential('a repository from install to evidence', () => {
     expect(evidence.row.repo).toBe(REPO);
   });
 
-  it('8. the JSON surface answers the same thing the page does', async () => {
-    if (!ready) return;
+  it('8. the JSON surface answers the same thing the page does', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     const rows = (await (await page(`/api/runs?repo=${encodeURIComponent(REPO)}`)).json()) as { run_id: string }[];
     expect(rows.map((row) => row.run_id)).toContain(runId);
     const one = (await (await page(`/api/runs/${runId}`)).json()) as { repo: string };
     expect(one.repo).toBe(REPO);
   });
 
-  it('9. and the whole read model can be thrown away and rebuilt from the log', async () => {
-    if (!ready) return;
+  it('9. and the whole read model can be thrown away and rebuilt from the log', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     const before = await listRuns(client!, REPO);
     await rebuildProjection(client!);
     const after = await listRuns(client!, REPO);
@@ -335,8 +336,8 @@ describe.sequential('a repository from install to evidence', () => {
     expect(before.length).toBeGreaterThan(0);
   });
 
-  it('10. what the run cost is kept beside the log, never inside it', async () => {
-    if (!ready) return;
+  it('10. what the run cost is kept beside the log, never inside it', async (context) => {
+    if (!ready) return skip(context, `no usable database: ${why}`);
     // ADR-0006: our spending is a fact about us, and the log is about the user's bug. So
     // it cannot be rebuilt by replay — losing it loses real information, and that is the
     // price of keeping the log clean, paid knowingly.
