@@ -20,7 +20,7 @@ import ts from 'typescript';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const BASELINE = join(ROOT, 'scripts/casts.json');
-const DIRS = ['src', 'test', 'scripts', 'web/app', 'web/components', 'web/lib'];
+const DIRS = ['src', 'test', 'scripts', '.claude/skills/verify-repro/scripts', 'web/app', 'web/components', 'web/lib'];
 const SOURCE = /\.(ts|tsx|mts)$/;
 
 const files = (dir: string): string[] =>
