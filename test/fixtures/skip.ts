@@ -21,7 +21,7 @@ export const EXPECTED_IN_CI: Record<string, string> = {
     'needs a registered GitHub App, and CI holds no credential',
   'test/sandbox.test.ts > the containment boundary > was NOT verified: no Docker daemon':
     'runs only when Docker is absent, and CI has Docker',
-  'test/sandbox.test.ts > the engine runs inside the sandbox > the agent sees the wrong string by looking, and commits a test that needs no browser':
+  'test/sandbox.test.ts > the browser, in the agent sandbox only > the agent sees the wrong string by looking, and commits a test that needs no browser':
     'needs the agent image, which CI does not build',
 };
 
